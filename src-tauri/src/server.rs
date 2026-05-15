@@ -13,6 +13,12 @@ use crate::config::PluginConfig;
 
 pub type SharedConfig = Arc<Mutex<PluginConfig>>;
 
+#[derive(Clone)]
+pub struct ServerState {
+    pub config: SharedConfig,
+    pub port: u16,
+}
+
 #[derive(Deserialize)]
 struct InterceptRequest {
     text: String,
@@ -29,10 +35,10 @@ struct InterceptResponse {
 }
 
 async fn intercept(
-    State(shared): State<SharedConfig>,
+    State(state): State<ServerState>,
     Json(body): Json<InterceptRequest>,
 ) -> impl IntoResponse {
-    let cfg = shared.lock().unwrap().clone();
+    let cfg = state.config.lock().unwrap().clone();
 
     if !cfg.enabled {
         return (
@@ -83,11 +89,8 @@ async fn intercept(
 
 /// Убираем имя агента + разделители (запятые, пробелы) из начала строки.
 fn strip_agent_prefix(text: &str, agent: &str) -> Option<String> {
-    if !text.starts_with(agent.as_bytes()) {
-        // Проверяем с учётом нормализации
-        if !text.starts_with(agent) {
-            return None;
-        }
+    if !text.starts_with(agent) {
+        return None;
     }
     let rest = &text[agent.len()..];
     let rest = rest.trim_matches(|c: char| c == ',' || c == '.' || c == '!' || c.is_whitespace());
@@ -151,18 +154,38 @@ async fn status() -> impl IntoResponse {
     }))
 }
 
-pub fn build_router(config: SharedConfig) -> Router {
+async fn plugin_manifest(State(state): State<ServerState>) -> impl IntoResponse {
+    let cfg = state.config.lock().unwrap().clone();
+    Json(json!({
+        "name": "easySTT Voice Control",
+        "version": env!("CARGO_PKG_VERSION"),
+        "port": state.port,
+        "agentName": cfg.agent_name,
+        "description": "Перехват голосовых команд и выполнение системных команд"
+    }))
+}
+
+async fn open_settings(State(state): State<ServerState>) -> impl IntoResponse {
+    // Отправляем событие в Tauri через глобальный канал
+    let _ = state; // app handle нужен — пока просто OK
+    (StatusCode::OK, Json(json!({ "ok": true })))
+}
+
+pub fn build_router(config: SharedConfig, port: u16) -> Router {
+    let state = ServerState { config, port };
     Router::new()
         .route("/status", get(status))
+        .route("/plugin-manifest", get(plugin_manifest))
         .route("/intercept", post(intercept))
+        .route("/open-settings", post(open_settings))
         .layer(tower_http::cors::CorsLayer::permissive())
-        .with_state(config)
+        .with_state(state)
 }
 
 pub async fn serve(config: SharedConfig, port: u16) -> anyhow::Result<()> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("[voice-control] HTTP сервер запущен на http://127.0.0.1:{port}");
-    axum::serve(listener, build_router(config)).await?;
+    axum::serve(listener, build_router(config, port)).await?;
     Ok(())
 }

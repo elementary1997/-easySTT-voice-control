@@ -159,9 +159,16 @@ pub fn run() {
 
             setup_tray(app)?;
 
-            // Настройки открываются только по клику на трей; при автозапуске окно скрыто
+            // --background: запущен easySTT'ом → окно скрыто, только трей.
+            // Без флага (ручной запуск) → сразу открываем настройки.
+            let background = std::env::args().any(|a| a == "--background");
             if let Some(w) = app.get_webview_window("main") {
-                let _ = w.hide();
+                if background {
+                    let _ = w.hide();
+                } else {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
             }
 
             Ok(())
