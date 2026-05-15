@@ -151,8 +151,9 @@ pub fn run() {
 
             // HTTP-сервер запускаем после загрузки конфига
             let cfg_for_server = shared_config.clone();
+            let handle_for_server = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = server::serve(cfg_for_server, port).await {
+                if let Err(e) = server::serve(cfg_for_server, port, handle_for_server).await {
                     eprintln!("[voice-control] Ошибка сервера: {e}");
                 }
             });

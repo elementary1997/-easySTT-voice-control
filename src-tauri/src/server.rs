@@ -8,6 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Manager};
 
 use crate::config::PluginConfig;
 
@@ -17,6 +18,7 @@ pub type SharedConfig = Arc<Mutex<PluginConfig>>;
 pub struct ServerState {
     pub config: SharedConfig,
     pub port: u16,
+    pub app_handle: AppHandle,
 }
 
 #[derive(Deserialize)]
@@ -89,7 +91,7 @@ async fn intercept(
 
 /// Убираем имя агента + разделители (запятые, пробелы) из начала строки.
 fn strip_agent_prefix(text: &str, agent: &str) -> Option<String> {
-    if !text.starts_with(agent) {
+    if agent.is_empty() || !text.starts_with(agent) {
         return None;
     }
     let rest = &text[agent.len()..];
@@ -166,13 +168,16 @@ async fn plugin_manifest(State(state): State<ServerState>) -> impl IntoResponse 
 }
 
 async fn open_settings(State(state): State<ServerState>) -> impl IntoResponse {
-    // Отправляем событие в Tauri через глобальный канал
-    let _ = state; // app handle нужен — пока просто OK
+    if let Some(w) = state.app_handle.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
     (StatusCode::OK, Json(json!({ "ok": true })))
 }
 
-pub fn build_router(config: SharedConfig, port: u16) -> Router {
-    let state = ServerState { config, port };
+pub fn build_router(config: SharedConfig, port: u16, app_handle: AppHandle) -> Router {
+    let state = ServerState { config, port, app_handle };
     Router::new()
         .route("/status", get(status))
         .route("/plugin-manifest", get(plugin_manifest))
@@ -182,10 +187,10 @@ pub fn build_router(config: SharedConfig, port: u16) -> Router {
         .with_state(state)
 }
 
-pub async fn serve(config: SharedConfig, port: u16) -> anyhow::Result<()> {
+pub async fn serve(config: SharedConfig, port: u16, app_handle: AppHandle) -> anyhow::Result<()> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("[voice-control] HTTP сервер запущен на http://127.0.0.1:{port}");
-    axum::serve(listener, build_router(config, port)).await?;
+    axum::serve(listener, build_router(config, port, app_handle)).await?;
     Ok(())
 }
