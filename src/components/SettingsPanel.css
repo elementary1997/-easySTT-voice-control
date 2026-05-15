@@ -227,6 +227,11 @@ body {
 }
 .how-to strong { color: var(--text); }
 .how-to em { color: var(--accent-h); font-style: normal; }
+.how-to-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
 .how-to code {
   font-family: "JetBrains Mono", Consolas, monospace;
   background: var(--bg-row);

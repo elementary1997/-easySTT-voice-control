@@ -295,12 +295,14 @@ export default function SettingsPanel() {
       <section className="section section--info">
         <h2 className="section-title">Как подключить</h2>
         <ol className="how-to">
-          <li>Откройте <strong>easySTT → Настройки → Основное</strong></li>
-          <li>Включите <strong>«Голосовые команды»</strong> и укажите URL:<br />
-            <code>http://127.0.0.1:{config.port}</code></li>
-          <li>Нажмите <strong>«Сохранить»</strong> в easySTT</li>
+          <li>В easySTT → <strong>Настройки → 🧩 Плагины</strong> → «+ Добавить плагин»</li>
+          <li>Выберите этот исполняемый файл</li>
+          <li>Плагин запустится автоматически на порту <code>{config.port}</code></li>
           <li>Говорите: <em>«{config.agentName || "Вилли"}, открой проводник»</em></li>
         </ol>
+        <p className="how-to-note">
+          Текущий URL для подключения: <code>http://127.0.0.1:{config.port}</code>
+        </p>
       </section>
 
       {/* ── Footer ── */}

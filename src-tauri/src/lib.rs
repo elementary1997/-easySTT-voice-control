@@ -146,7 +146,13 @@ pub fn run() {
         .setup(move |app| {
             // Загружаем сохранённый конфиг и обновляем shared state
             let saved = load_from_store(app);
-            let port = saved.port;
+            // --port <num>: easySTT передаёт порт при запуске плагина.
+            // Если аргумент есть — используем его, иначе берём из сохранённого конфига.
+            let args: Vec<String> = std::env::args().collect();
+            let port_arg: Option<u16> = args.windows(2)
+                .find(|w| w[0] == "--port")
+                .and_then(|w| w[1].parse().ok());
+            let port = port_arg.unwrap_or(saved.port);
             *shared_config.lock().unwrap() = saved;
 
             // HTTP-сервер запускаем после загрузки конфига
