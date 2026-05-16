@@ -299,8 +299,8 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 22px 24px;
-  width: 480px;
-  max-width: 94vw;
+  width: 560px;
+  max-width: 96vw;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -319,6 +319,6 @@ body {
   margin-top: 6px;
 }
 
-.os-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.os-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .os-label { display: flex; align-items: center; gap: 4px; }
 .hint { font-weight: 400; font-size: 11px; color: var(--text-dim); text-transform: none; letter-spacing: 0; }

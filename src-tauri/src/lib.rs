@@ -5,11 +5,7 @@ use config::PluginConfig;
 use server::SharedConfig;
 
 use std::sync::{Arc, Mutex};
-use tauri::{
-    menu::{Menu, MenuItem},
-    tray::{TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, State,
-};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_store::StoreExt;
 
 const STORE_FILE: &str = "voice_control.json";
@@ -38,7 +34,7 @@ fn persist(app: &AppHandle, cfg: &PluginConfig) {
     }
 }
 
-fn show_window(app: &AppHandle) {
+pub fn show_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -103,38 +99,6 @@ fn get_current_platform() -> &'static str {
     if cfg!(windows) { "windows" } else { "linux" }
 }
 
-// ─── Tray ─────────────────────────────────────────────────────────────────────
-
-fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
-    let settings = MenuItem::with_id(app, "settings", "Настройки", true, None::<&str>)?;
-    let sep = tauri::menu::PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&settings, &sep, &quit])?;
-
-    let mut builder = TrayIconBuilder::new()
-        .menu(&menu)
-        .tooltip("easySTT Voice Control");
-
-    if let Some(icon) = app.default_window_icon().cloned() {
-        builder = builder.icon(icon);
-    }
-
-    builder
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "settings" => show_window(app),
-            "quit" => app.exit(0),
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::DoubleClick { .. } = event {
-                show_window(tray.app_handle());
-            }
-        })
-        .build(app)?;
-
-    Ok(())
-}
-
 // ─── Entry Point ──────────────────────────────────────────────────────────────
 
 pub fn run() {
@@ -144,10 +108,9 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(AppState { config: shared_config.clone() })
         .setup(move |app| {
-            // Загружаем сохранённый конфиг и обновляем shared state
+            // Загружаем сохранённый конфиг
             let saved = load_from_store(app);
-            // --port <num>: easySTT передаёт порт при запуске плагина.
-            // Если аргумент есть — используем его, иначе берём из сохранённого конфига.
+            // --port <num>: easySTT передаёт порт при запуске.
             let args: Vec<String> = std::env::args().collect();
             let port_arg: Option<u16> = args.windows(2)
                 .find(|w| w[0] == "--port")
@@ -155,7 +118,7 @@ pub fn run() {
             let port = port_arg.unwrap_or(saved.port);
             *shared_config.lock().unwrap() = saved;
 
-            // HTTP-сервер запускаем после загрузки конфига
+            // HTTP-сервер
             let cfg_for_server = shared_config.clone();
             let handle_for_server = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -164,18 +127,21 @@ pub fn run() {
                 }
             });
 
-            setup_tray(app)?;
-
-            // --background: запущен easySTT'ом → окно скрыто, только трей.
-            // Без флага (ручной запуск) → сразу открываем настройки.
-            let background = std::env::args().any(|a| a == "--background");
+            // Закрытие окна = скрыть, не выходить (HTTP-сервер продолжает работать).
             if let Some(w) = app.get_webview_window("main") {
-                if background {
-                    let _ = w.hide();
-                } else {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
+                let w_clone = w.clone();
+                w.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = w_clone.hide();
+                    }
+                });
+            }
+
+            // --background: запущен easySTT'ом → окно скрыто.
+            // Без флага (ручной запуск) → открываем настройки.
+            if !std::env::args().any(|a| a == "--background") {
+                show_window(app.handle());
             }
 
             Ok(())
