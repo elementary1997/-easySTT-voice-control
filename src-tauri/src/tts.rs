@@ -1,6 +1,6 @@
 /// Произносит текст через системный TTS (неблокирующий — запускает поток).
 pub fn speak(text: &str) {
-    speak_with_engine(text, "system", "");
+    speak_with_engine(text, "system", "", "");
 }
 
 /// Произносит текст с учётом выбранного движка.
