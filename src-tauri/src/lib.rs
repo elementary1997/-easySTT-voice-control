@@ -110,6 +110,18 @@ fn get_current_platform() -> &'static str {
     if cfg!(windows) { "windows" } else { "linux" }
 }
 
+#[tauri::command]
+fn export_commands(state: State<'_, AppState>) -> Result<String, String> {
+    let commands = state.config.lock().unwrap().commands.clone();
+    let json = serde_json::to_string_pretty(&commands).map_err(|e| e.to_string())?;
+    let path = dirs::download_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("voice-commands.json");
+    std::fs::write(&path, &json).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 // ─── Entry Point ──────────────────────────────────────────────────────────────
 
 pub fn run() {
@@ -167,6 +179,7 @@ pub fn run() {
             save_config,
             test_command,
             get_current_platform,
+            export_commands,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска easySTT Voice Control");

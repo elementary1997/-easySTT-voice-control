@@ -141,6 +141,95 @@ body {
 .field-input[type="number"]::-webkit-outer-spin-button,
 .field-input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
 
+/* ─── Category tabs ──────────────────────────────────────────────────────── */
+.cat-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+.cat-tabs::-webkit-scrollbar { display: none; }
+
+.cat-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-row);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s, border-color .12s;
+  position: relative;
+  flex-shrink: 0;
+}
+.cat-tab:hover { background: #1e2a40; color: var(--text); }
+.cat-tab--active {
+  background: rgba(76, 132, 255, 0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.cat-tab--add {
+  border-style: dashed;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+.cat-tab--add:hover { opacity: 1; color: var(--accent); border-color: var(--accent); }
+
+.cat-tab-count {
+  background: rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 0 5px;
+  font-size: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+.cat-tab--active .cat-tab-count {
+  background: rgba(76, 132, 255, 0.2);
+}
+
+.cat-tab-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-dim);
+  opacity: 0;
+  transition: opacity .12s, background .12s, color .12s;
+  cursor: pointer;
+  margin-left: 1px;
+}
+.cat-tab:hover .cat-tab-remove { opacity: 1; }
+.cat-tab-remove:hover { background: var(--danger); color: #fff; opacity: 1; }
+
+.cat-tab-add {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.cat-tab-input {
+  background: var(--bg-row);
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 10px;
+  outline: none;
+  width: 120px;
+}
+
 /* ─── Commands list ───────────────────────────────────────────────────────── */
 .cmd-list {
   display: flex;
@@ -152,26 +241,6 @@ body {
   border: 1px solid var(--border);
 }
 
-.cmd-category-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.cmd-category-header {
-  padding: 5px 10px 4px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .07em;
-  color: var(--accent);
-  background: rgba(76, 132, 255, 0.07);
-  border-bottom: 1px solid var(--border);
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.cmd-category-group:first-child .cmd-category-header {
-  border-top: none;
-}
 
 .cmd-list-header,
 .cmd-row {
@@ -196,6 +265,7 @@ body {
   transition: background .1s;
 }
 .cmd-row:hover { background: #1e2a40; }
+.cmd-row > div { min-width: 0; }
 
 .cmd-trigger {
   display: flex;
@@ -332,6 +402,7 @@ body {
   transition: background .15s;
 }
 .btn-secondary:hover { background: #1e2a40; }
+.btn-secondary.btn-small { padding: 4px 12px; font-size: 12px; }
 
 /* ─── Modal tabs ──────────────────────────────────────────────────────────── */
 .modal-shared-fields {

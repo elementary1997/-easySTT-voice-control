@@ -26,6 +26,16 @@ pub struct VoiceCommand {
 
 fn default_true() -> bool { true }
 
+fn default_categories() -> Vec<String> {
+    vec![
+        "Приложения".to_string(),
+        "Браузер".to_string(),
+        "Система".to_string(),
+        "Настройки".to_string(),
+        "Утилиты".to_string(),
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginConfig {
@@ -35,6 +45,8 @@ pub struct PluginConfig {
     pub agent_name: String,
     pub port: u16,
     pub commands: Vec<VoiceCommand>,
+    #[serde(default = "default_categories")]
+    pub categories: Vec<String>,
 }
 
 impl Default for PluginConfig {
@@ -44,6 +56,7 @@ impl Default for PluginConfig {
             autostart: true,
             agent_name: "Вилли".to_string(),
             port: 8790,
+            categories: default_categories(),
             commands: vec![
                 VoiceCommand {
                     id: "1".to_string(),

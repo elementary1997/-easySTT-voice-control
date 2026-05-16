@@ -24,10 +24,8 @@ interface PluginConfig {
   agentName: string;
   port: number;
   commands: VoiceCommand[];
+  categories: string[];
 }
-
-const PRESET_CATEGORIES = ["Приложения", "Браузер", "Система", "Настройки", "Утилиты"];
-const CATEGORY_ORDER = [...PRESET_CATEGORIES];
 
 const EMPTY_COMMAND: Omit<VoiceCommand, "id"> = {
   trigger: "", aliases: [],
@@ -113,11 +111,12 @@ function CommandRow({ cmd, platform, onEdit, onDelete, onTest }: CommandRowProps
 
 interface EditModalProps {
   cmd: VoiceCommand | null;
+  categories: string[];
   onSave: (cmd: VoiceCommand) => void;
   onClose: () => void;
 }
 
-function EditModal({ cmd, onSave, onClose }: EditModalProps) {
+function EditModal({ cmd, categories, onSave, onClose }: EditModalProps) {
   const [form, setForm] = useState<VoiceCommand>(cmd ?? { id: newId(), ...EMPTY_COMMAND });
   const [tab, setTab] = useState<"open" | "close">("open");
 
@@ -148,7 +147,7 @@ function EditModal({ cmd, onSave, onClose }: EditModalProps) {
               onChange={(e) => set("category", e.target.value)}
             />
             <datalist id="category-suggestions">
-              {PRESET_CATEGORIES.map((c) => <option key={c} value={c} />)}
+              {categories.map((c) => <option key={c} value={c} />)}
             </datalist>
           </div>
           <div className="field-group" style={{ flex: 2 }}>
@@ -281,7 +280,7 @@ function EditModal({ cmd, onSave, onClose }: EditModalProps) {
 export default function SettingsPanel() {
   const [config, setConfig] = useState<PluginConfig>({
     enabled: true, autostart: true,
-    agentName: "Вилли", port: 8790, commands: [],
+    agentName: "Вилли", port: 8790, commands: [], categories: [],
   });
   const [platform, setPlatform] = useState<"windows" | "linux">("windows");
   const [saved, setSaved] = useState(false);
@@ -289,7 +288,11 @@ export default function SettingsPanel() {
   const [testFeedback, setTestFeedback] = useState<string>("");
   const [portWarning, setPortWarning] = useState(false);
   const [originalPort, setOriginalPort] = useState(8790);
+  const [activeCategory, setActiveCategory] = useState("Все");
+  const [addingCat, setAddingCat] = useState(false);
+  const [newCatInput, setNewCatInput] = useState("");
   const importRef = useRef<HTMLInputElement>(null);
+  const newCatInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     invoke<PluginConfig>("get_config").then((cfg) => {
@@ -301,30 +304,20 @@ export default function SettingsPanel() {
     });
   }, []);
 
-  // ── Grouped commands ──────────────────────────────────────────────────────
+  // ── Category helpers ──────────────────────────────────────────────────────
 
-  const grouped = useMemo(() => {
-    const map: Record<string, VoiceCommand[]> = {};
-    for (const cmd of config.commands) {
-      const cat = cmd.category?.trim() || "Другое";
-      if (!map[cat]) map[cat] = [];
-      map[cat].push(cmd);
-    }
-    return map;
-  }, [config.commands]);
+  const orphanCommands = useMemo(() =>
+    config.commands.filter(c => !c.category.trim() || !config.categories.includes(c.category)),
+    [config.commands, config.categories]
+  );
 
-  const sortedCats = useMemo(() => {
-    return Object.keys(grouped).sort((a, b) => {
-      const ia = CATEGORY_ORDER.indexOf(a);
-      const ib = CATEGORY_ORDER.indexOf(b);
-      if (ia !== -1 && ib !== -1) return ia - ib;
-      if (ia !== -1) return -1;
-      if (ib !== -1) return 1;
-      if (a === "Другое") return 1;
-      if (b === "Другое") return -1;
-      return a.localeCompare(b, "ru");
-    });
-  }, [grouped]);
+  const showDrugoe = orphanCommands.length > 0;
+
+  const filteredCommands = useMemo(() => {
+    if (activeCategory === "Все") return config.commands;
+    if (activeCategory === "Другое") return orphanCommands;
+    return config.commands.filter(c => c.category === activeCategory);
+  }, [config.commands, activeCategory, orphanCommands]);
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -353,8 +346,14 @@ export default function SettingsPanel() {
   const handleEditSave = useCallback((cmd: VoiceCommand) => {
     setConfig((c) => {
       const exists = c.commands.some((x) => x.id === cmd.id);
+      let cats = c.categories;
+      const cat = cmd.category.trim();
+      if (cat && !cats.includes(cat)) {
+        cats = [...cats, cat];
+      }
       return {
         ...c,
+        categories: cats,
         commands: exists
           ? c.commands.map((x) => (x.id === cmd.id ? cmd : x))
           : [...c.commands, cmd],
@@ -363,15 +362,37 @@ export default function SettingsPanel() {
     setEditTarget(null);
   }, []);
 
+  const handleAddCategory = useCallback(() => {
+    const name = newCatInput.trim();
+    if (name && !config.categories.includes(name)) {
+      setConfig(c => ({ ...c, categories: [...c.categories, name] }));
+      setActiveCategory(name);
+    }
+    setAddingCat(false);
+    setNewCatInput("");
+  }, [newCatInput, config.categories]);
+
+  const handleRemoveCategory = useCallback((cat: string) => {
+    if (!confirm(`Удалить категорию «${cat}»? Команды перейдут в «Другое».`)) return;
+    setConfig(c => ({
+      ...c,
+      categories: c.categories.filter(x => x !== cat),
+      commands: c.commands.map(cmd => cmd.category === cat ? { ...cmd, category: "" } : cmd),
+    }));
+    if (activeCategory === cat) setActiveCategory("Все");
+  }, [activeCategory]);
+
   // ── Export / Import ───────────────────────────────────────────────────────
 
-  const handleExport = useCallback(() => {
-    const blob = new Blob([JSON.stringify(config.commands, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "voice-commands.json"; a.click();
-    URL.revokeObjectURL(url);
-  }, [config.commands]);
+  const handleExport = useCallback(async () => {
+    try {
+      const path = await invoke<string>("export_commands");
+      setTestFeedback(`Сохранено: ${path}`);
+    } catch (e) {
+      setTestFeedback(`Ошибка экспорта: ${e}`);
+    }
+    setTimeout(() => setTestFeedback(""), 4000);
+  }, []);
 
   const handleImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -389,6 +410,7 @@ export default function SettingsPanel() {
         );
         let added = 0, skipped = 0;
         const toAdd: VoiceCommand[] = [];
+        const newCats: string[] = [];
         for (const cmd of incoming) {
           if (!cmd.trigger?.trim()) { skipped++; continue; }
           const norm = normalizeTrigger(cmd.trigger);
@@ -396,8 +418,18 @@ export default function SettingsPanel() {
           toAdd.push({ ...EMPTY_COMMAND, ...cmd, id: newId() });
           existingKeys.add(norm);
           added++;
+          const cat = cmd.category?.trim();
+          if (cat && !newCats.includes(cat)) newCats.push(cat);
         }
-        if (toAdd.length > 0) setConfig((c) => ({ ...c, commands: [...c.commands, ...toAdd] }));
+        if (toAdd.length > 0) {
+          setConfig((c) => {
+            const mergedCats = [...c.categories];
+            for (const cat of newCats) {
+              if (!mergedCats.includes(cat)) mergedCats.push(cat);
+            }
+            return { ...c, categories: mergedCats, commands: [...c.commands, ...toAdd] };
+          });
+        }
         const msg = added > 0
           ? `Добавлено: ${added}${skipped > 0 ? `, пропущено дублей: ${skipped}` : ""}`
           : `Все команды уже есть (пропущено: ${skipped})`;
@@ -469,8 +501,73 @@ export default function SettingsPanel() {
           </div>
         </div>
 
+        {/* Category tabs */}
+        <div className="cat-tabs">
+          <button
+            className={`cat-tab ${activeCategory === "Все" ? "cat-tab--active" : ""}`}
+            onClick={() => setActiveCategory("Все")}
+          >
+            Все
+            <span className="cat-tab-count">{config.commands.length}</span>
+          </button>
+
+          {config.categories.map((cat) => (
+            <button
+              key={cat}
+              className={`cat-tab ${activeCategory === cat ? "cat-tab--active" : ""}`}
+              onClick={() => setActiveCategory(cat)}
+            >
+              {cat}
+              <span className="cat-tab-count">
+                {config.commands.filter(c => c.category === cat).length}
+              </span>
+              <span
+                className="cat-tab-remove"
+                title={`Удалить категорию «${cat}»`}
+                onClick={(e) => { e.stopPropagation(); handleRemoveCategory(cat); }}
+              >×</span>
+            </button>
+          ))}
+
+          {showDrugoe && (
+            <button
+              className={`cat-tab ${activeCategory === "Другое" ? "cat-tab--active" : ""}`}
+              onClick={() => setActiveCategory("Другое")}
+            >
+              Другое
+              <span className="cat-tab-count">{orphanCommands.length}</span>
+            </button>
+          )}
+
+          {addingCat ? (
+            <div className="cat-tab-add">
+              <input
+                ref={newCatInputRef}
+                className="cat-tab-input"
+                placeholder="Название..."
+                value={newCatInput}
+                autoFocus
+                onChange={(e) => setNewCatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleAddCategory();
+                  if (e.key === "Escape") { setAddingCat(false); setNewCatInput(""); }
+                }}
+                onBlur={handleAddCategory}
+              />
+            </div>
+          ) : (
+            <button className="cat-tab cat-tab--add" onClick={() => setAddingCat(true)}>
+              + Категория
+            </button>
+          )}
+        </div>
+
         {config.commands.length === 0 ? (
           <div className="empty-state">Нет команд. Нажмите «+ Добавить» чтобы создать первую.</div>
+        ) : filteredCommands.length === 0 ? (
+          <div className="empty-state">
+            В категории «{activeCategory}» нет команд.
+          </div>
         ) : (
           <div className="cmd-list">
             <div className="cmd-list-header">
@@ -479,16 +576,11 @@ export default function SettingsPanel() {
               <span>Описание</span>
               <span />
             </div>
-            {sortedCats.map((cat) => (
-              <div key={cat} className="cmd-category-group">
-                <div className="cmd-category-header">{cat}</div>
-                {grouped[cat].map((cmd) => (
-                  <CommandRow key={cmd.id} cmd={cmd} platform={platform}
-                    onEdit={(c) => setEditTarget(c)}
-                    onDelete={handleDeleteCmd}
-                    onTest={handleTest} />
-                ))}
-              </div>
+            {filteredCommands.map((cmd) => (
+              <CommandRow key={cmd.id} cmd={cmd} platform={platform}
+                onEdit={(c) => setEditTarget(c)}
+                onDelete={handleDeleteCmd}
+                onTest={handleTest} />
             ))}
           </div>
         )}
@@ -506,6 +598,7 @@ export default function SettingsPanel() {
       {editTarget !== null && (
         <EditModal
           cmd={editTarget === "new" ? null : editTarget}
+          categories={config.categories}
           onSave={handleEditSave}
           onClose={() => setEditTarget(null)}
         />
