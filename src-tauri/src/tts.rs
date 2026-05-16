@@ -6,7 +6,20 @@ pub fn speak(text: &str) {
 /// Произносит текст с учётом выбранного движка.
 pub fn speak_with_engine(text: &str, engine: &str, piper_voice: &str, custom_cmd: &str) {
     match engine {
-        "piper" => crate::piper::speak(text, piper_voice),
+        "piper" => {
+            if crate::piper::is_binary_installed() && crate::piper::is_voice_installed(piper_voice) {
+                crate::piper::speak(text, piper_voice);
+            } else {
+                // Piper не готов — fallback на системный TTS
+                let text = text.to_string();
+                std::thread::spawn(move || {
+                    #[cfg(windows)]
+                    speak_windows(&text);
+                    #[cfg(not(windows))]
+                    speak_linux(&text);
+                });
+            }
+        }
         "custom" if !custom_cmd.is_empty() => {
             let text = text.to_string();
             let custom_cmd = custom_cmd.to_string();

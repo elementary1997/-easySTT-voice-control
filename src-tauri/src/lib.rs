@@ -132,9 +132,8 @@ async fn check_ollama(url: String) -> bool {
 // ─── TTS Commands ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn test_tts(state: State<'_, AppState>, text: String) {
-    let cfg = state.config.lock().unwrap().clone();
-    tts::speak_with_engine(&text, &cfg.voice_engine, &cfg.piper_voice, &cfg.voice_custom_cmd);
+fn test_tts(text: String, engine: String, piper_voice: String, custom_cmd: String) {
+    tts::speak_with_engine(&text, &engine, &piper_voice, &custom_cmd);
 }
 
 // ─── Piper Commands ───────────────────────────────────────────────────────────

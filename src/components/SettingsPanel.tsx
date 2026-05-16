@@ -377,8 +377,14 @@ export default function SettingsPanel() {
   }, [config.commands]);
 
   const handleTestTts = useCallback(() => {
-    invoke("test_tts", { text: ttsTestText }).catch(e => showFeedback(`TTS ошибка: ${e}`));
-  }, [ttsTestText]);
+    // Передаём текущие настройки UI, не ждём сохранения
+    invoke("test_tts", {
+      text: ttsTestText,
+      engine: config.voiceEngine,
+      piperVoice: config.piperVoice,
+      customCmd: config.voiceCustomCmd,
+    }).catch(e => showFeedback(`TTS ошибка: ${e}`));
+  }, [ttsTestText, config.voiceEngine, config.piperVoice, config.voiceCustomCmd]);
 
   const loadPiperStatus = useCallback(() => {
     invoke<PiperStatus>("get_piper_status").then(setPiperStatus);
