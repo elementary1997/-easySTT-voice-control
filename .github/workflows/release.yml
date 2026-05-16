@@ -53,11 +53,11 @@ jobs:
       matrix:
         include:
           - platform: ubuntu-22.04
-            binary: easySTT-voice-control-linux
-            src_binary: src-tauri/target/release/easystt-voice-control
+            binary: src-tauri/target/release/easystt-voice-control
+            artifact_name: easySTT-voice-control-linux
           - platform: windows-latest
-            binary: easySTT-voice-control-windows.exe
-            src_binary: src-tauri/target/release/easystt-voice-control.exe
+            binary: src-tauri/target/release/easystt-voice-control.exe
+            artifact_name: easySTT-voice-control-windows.exe
 
     runs-on: ${{ matrix.platform }}
 
@@ -88,8 +88,11 @@ jobs:
 
       - run: npm ci
 
+      - name: Build frontend
+        run: npm run build
+
       - name: Build standalone binary
-        run: npx tauri build --bundles none
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
 
       - name: Upload binary to release
         env:
@@ -97,7 +100,7 @@ jobs:
         shell: bash
         run: |
           gh release upload "${{ github.ref_name }}" \
-            "${{ matrix.src_binary }}#${{ matrix.binary }}" \
+            "${{ matrix.binary }}#${{ matrix.artifact_name }}" \
             --repo "${{ github.repository }}"
 
   publish-release:

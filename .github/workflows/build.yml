@@ -51,8 +51,11 @@ jobs:
 
       - run: npm ci
 
+      - name: Build frontend
+        run: npm run build
+
       - name: Build standalone binary
-        run: npx tauri build --bundles none
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
 
       - name: Upload standalone binary
         uses: actions/upload-artifact@v4
