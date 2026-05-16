@@ -132,8 +132,8 @@ async fn check_ollama(url: String) -> bool {
 // ─── TTS Commands ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn test_tts(text: String, engine: String, piper_voice: String, custom_cmd: String) {
-    tts::speak_with_engine(&text, &engine, &piper_voice, &custom_cmd);
+fn test_tts(text: String, engine: String, piper_voice: String, edge_voice: String, custom_cmd: String) {
+    tts::speak_with_engine(&text, &engine, &piper_voice, &edge_voice, &custom_cmd);
 }
 
 // ─── Piper Commands ───────────────────────────────────────────────────────────

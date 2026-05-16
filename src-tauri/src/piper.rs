@@ -62,20 +62,6 @@ pub struct PiperVoice {
 pub fn voice_catalog() -> Vec<PiperVoice> {
     let voices: &[(&str, &str, &str, u32, &str)] = &[
         (
-            "ru_RU-irina-medium",
-            "Ирина ♀",
-            "female",
-            65,
-            "ru/ru_RU/irina/medium/ru_RU-irina-medium",
-        ),
-        (
-            "ru_RU-irina-low",
-            "Ирина ♀ (low)",
-            "female",
-            18,
-            "ru/ru_RU/irina/low/ru_RU-irina-low",
-        ),
-        (
             "ru_RU-denis-medium",
             "Денис ♂",
             "male",

@@ -192,7 +192,7 @@ fn maybe_speak(cfg: &crate::config::PluginConfig, custom: Option<&str>) {
     let text = custom
         .map(|s| s.to_string())
         .unwrap_or_else(|| crate::tts::random_response(&cfg.voice_feedback_style));
-    crate::tts::speak_with_engine(&text, &cfg.voice_engine, &cfg.piper_voice, &cfg.voice_custom_cmd);
+    crate::tts::speak_with_engine(&text, &cfg.voice_engine, &cfg.piper_voice, &cfg.edge_tts_voice, &cfg.voice_custom_cmd);
 }
 
 /// Ищет точное совпадение и возвращает (trigger, exec_cmd, label) если нашёл.

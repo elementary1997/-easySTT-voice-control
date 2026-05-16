@@ -33,6 +33,7 @@ interface PluginConfig {
   voiceFeedbackStyle: string;
   voiceEngine: string;
   piperVoice: string;
+  edgeTtsVoice: string;
   voiceCustomCmd: string;
 }
 
@@ -60,7 +61,8 @@ const DEFAULT_CONFIG: PluginConfig = {
   voiceFeedbackEnabled: false,
   voiceFeedbackStyle: "neutral",
   voiceEngine: "system",
-  piperVoice: "ru_RU-irina-medium",
+  piperVoice: "ru_RU-denis-medium",
+  edgeTtsVoice: "ru-RU-SvetlanaNeural",
   voiceCustomCmd: "",
 };
 
@@ -382,9 +384,10 @@ export default function SettingsPanel() {
       text: ttsTestText,
       engine: config.voiceEngine,
       piperVoice: config.piperVoice,
+      edgeVoice: config.edgeTtsVoice,
       customCmd: config.voiceCustomCmd,
     }).catch(e => showFeedback(`TTS ошибка: ${e}`));
-  }, [ttsTestText, config.voiceEngine, config.piperVoice, config.voiceCustomCmd]);
+  }, [ttsTestText, config.voiceEngine, config.piperVoice, config.edgeTtsVoice, config.voiceCustomCmd]);
 
   const loadPiperStatus = useCallback(() => {
     invoke<PiperStatus>("get_piper_status").then(setPiperStatus);
@@ -624,16 +627,17 @@ export default function SettingsPanel() {
 
                 <label className="field-label" style={{ marginTop: 12 }}>Голосовой движок</label>
                 <div className="style-selector">
-                  {(["system", "piper", "custom"] as const).map(eng => (
-                    <label key={eng} className={`style-option ${config.voiceEngine === eng ? "style-option--active" : ""}`}>
-                      <input type="radio" name="engine" value={eng} checked={config.voiceEngine === eng}
-                        onChange={() => setConfig(c => ({ ...c, voiceEngine: eng }))} />
-                      <span className="style-label">
-                        {eng === "system" ? "Системный" : eng === "piper" ? "Piper TTS" : "Свой"}
-                      </span>
-                      <span className="style-example">
-                        {eng === "system" ? "SAPI / espeak-ng" : eng === "piper" ? "офлайн, быстрый" : "своя команда"}
-                      </span>
+                  {([
+                    { id: "system", label: "Системный",  hint: "SAPI / espeak-ng" },
+                    { id: "piper",  label: "Piper TTS",  hint: "офлайн, быстрый" },
+                    { id: "edge",   label: "Edge TTS",   hint: "онлайн, как Алиса" },
+                    { id: "custom", label: "Свой",       hint: "своя команда" },
+                  ] as const).map(eng => (
+                    <label key={eng.id} className={`style-option ${config.voiceEngine === eng.id ? "style-option--active" : ""}`}>
+                      <input type="radio" name="engine" value={eng.id} checked={config.voiceEngine === eng.id}
+                        onChange={() => setConfig(c => ({ ...c, voiceEngine: eng.id }))} />
+                      <span className="style-label">{eng.label}</span>
+                      <span className="style-example">{eng.hint}</span>
                     </label>
                   ))}
                 </div>
@@ -710,6 +714,23 @@ export default function SettingsPanel() {
                         </div>
                       </>
                     )}
+                  </div>
+                )}
+
+                {config.voiceEngine === "edge" && (
+                  <div className="piper-section">
+                    <label className="field-label" style={{ marginTop: 4 }}>Голос</label>
+                    <select className="field-input" value={config.edgeTtsVoice}
+                      onChange={e => setConfig(c => ({ ...c, edgeTtsVoice: e.target.value }))}>
+                      <optgroup label="Русский">
+                        <option value="ru-RU-SvetlanaNeural">Светлана ♀ (Neural)</option>
+                        <option value="ru-RU-DmitryNeural">Дмитрий ♂ (Neural)</option>
+                        <option value="ru-RU-DaryaNeural">Дарья ♀ (Expressive)</option>
+                      </optgroup>
+                    </select>
+                    <span className="field-hint" style={{ marginTop: 4 }}>
+                      Требуется: <code>pip install edge-tts</code>
+                    </span>
                   </div>
                 )}
 
