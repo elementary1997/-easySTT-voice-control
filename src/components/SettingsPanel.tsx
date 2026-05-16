@@ -7,6 +7,7 @@ import "./SettingsPanel.css";
 interface VoiceCommand {
   id: string;
   trigger: string;
+  aliases: string[];
   windowsCmd: string;
   linuxCmd: string;
   description: string;
@@ -22,6 +23,7 @@ interface PluginConfig {
 
 const EMPTY_COMMAND: Omit<VoiceCommand, "id"> = {
   trigger: "",
+  aliases: [],
   windowsCmd: "",
   linuxCmd: "",
   description: "",
@@ -72,9 +74,21 @@ function EditModal({ cmd, onSave, onClose }: EditModalProps) {
   const [form, setForm] = useState<VoiceCommand>(
     cmd ?? { id: newId(), ...EMPTY_COMMAND }
   );
+  const [aliasInput, setAliasInput] = useState("");
 
   const set = <K extends keyof VoiceCommand>(key: K, val: VoiceCommand[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
+
+  const addAlias = () => {
+    const v = aliasInput.trim();
+    if (v && !form.aliases.includes(v)) {
+      set("aliases", [...form.aliases, v]);
+    }
+    setAliasInput("");
+  };
+
+  const removeAlias = (i: number) =>
+    set("aliases", form.aliases.filter((_, idx) => idx !== i));
 
   const handleSave = () => {
     if (!form.trigger.trim()) return;
@@ -86,7 +100,7 @@ function EditModal({ cmd, onSave, onClose }: EditModalProps) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3 className="modal-title">{cmd ? "Изменить команду" : "Новая команда"}</h3>
 
-        <label className="field-label">Голосовой триггер <span className="hint">(что произносить после имени агента)</span></label>
+        <label className="field-label">Основная фраза <span className="hint">(произносить после имени агента)</span></label>
         <input
           className="field-input"
           placeholder="например: открой проводник"
@@ -94,6 +108,22 @@ function EditModal({ cmd, onSave, onClose }: EditModalProps) {
           onChange={(e) => set("trigger", e.target.value)}
           autoFocus
         />
+
+        <label className="field-label">Синонимы <span className="hint">(необязательно, Enter — добавить)</span></label>
+        <div className="aliases-row">
+          {form.aliases.map((a, i) => (
+            <span key={i} className="alias-tag">
+              {a}<button className="alias-remove" onClick={() => removeAlias(i)}>×</button>
+            </span>
+          ))}
+          <input
+            className="alias-input"
+            placeholder="ещё фраза..."
+            value={aliasInput}
+            onChange={(e) => setAliasInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAlias(); } }}
+          />
+        </div>
 
         <label className="field-label">Описание <span className="hint">(необязательно)</span></label>
         <input
@@ -301,20 +331,6 @@ export default function SettingsPanel() {
         {testFeedback && (
           <div className="feedback-toast">{testFeedback}</div>
         )}
-      </section>
-
-      {/* ── How to use ── */}
-      <section className="section section--info">
-        <h2 className="section-title">Как подключить</h2>
-        <ol className="how-to">
-          <li>В easySTT → <strong>Настройки → 🧩 Плагины</strong> → «+ Добавить плагин»</li>
-          <li>Выберите этот исполняемый файл</li>
-          <li>Плагин запустится автоматически на порту <code>{config.port}</code></li>
-          <li>Говорите: <em>«{config.agentName || "Вилли"}, открой проводник»</em></li>
-        </ol>
-        <p className="how-to-note">
-          Текущий URL для подключения: <code>http://127.0.0.1:{config.port}</code>
-        </p>
       </section>
 
       {/* ── Footer ── */}

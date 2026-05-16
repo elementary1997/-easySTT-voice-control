@@ -68,7 +68,9 @@ async fn intercept(
 
     for cmd in &cfg.commands {
         let trigger = normalize(&cmd.trigger);
-        if matches_trigger(&command_text, &trigger) {
+        let hit = matches_trigger(&command_text, &trigger)
+            || cmd.aliases.iter().any(|a| matches_trigger(&command_text, &normalize(a)));
+        if hit {
             let exec_cmd = if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd };
             let feedback = if exec_cmd.is_empty() {
                 format!("Команда «{}» не задана для этой платформы", cmd.trigger)

@@ -3,15 +3,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VoiceCommand {
-    /// Уникальный идентификатор (генерируем на фронте через crypto.randomUUID)
     pub id: String,
-    /// Фраза-триггер, например «открой проводник»
     pub trigger: String,
-    /// Команда для Windows
+    /// Дополнительные фразы-триггеры (синонимы). Serde default = [] для старых конфигов.
+    #[serde(default)]
+    pub aliases: Vec<String>,
     pub windows_cmd: String,
-    /// Команда для Linux
     pub linux_cmd: String,
-    /// Человекочитаемое описание (необязательно)
     pub description: String,
 }
 
@@ -44,6 +42,7 @@ impl Default for PluginConfig {
                 VoiceCommand {
                     id: "1".to_string(),
                     trigger: "открой проводник".to_string(),
+                    aliases: vec![],
                     windows_cmd: "explorer.exe".to_string(),
                     linux_cmd: "xdg-open ~".to_string(),
                     description: "Файловый менеджер".to_string(),
@@ -51,6 +50,7 @@ impl Default for PluginConfig {
                 VoiceCommand {
                     id: "2".to_string(),
                     trigger: "открой браузер".to_string(),
+                    aliases: vec![],
                     windows_cmd: "start msedge".to_string(),
                     linux_cmd: "xdg-open https://google.com".to_string(),
                     description: "Браузер".to_string(),
@@ -58,6 +58,7 @@ impl Default for PluginConfig {
                 VoiceCommand {
                     id: "3".to_string(),
                     trigger: "открой калькулятор".to_string(),
+                    aliases: vec![],
                     windows_cmd: "calc.exe".to_string(),
                     linux_cmd: "gnome-calculator || kcalc || galculator".to_string(),
                     description: "Калькулятор".to_string(),
@@ -65,6 +66,7 @@ impl Default for PluginConfig {
                 VoiceCommand {
                     id: "4".to_string(),
                     trigger: "открой блокнот".to_string(),
+                    aliases: vec![],
                     windows_cmd: "notepad.exe".to_string(),
                     linux_cmd: "gedit || kate || nano".to_string(),
                     description: "Текстовый редактор".to_string(),
@@ -72,6 +74,7 @@ impl Default for PluginConfig {
                 VoiceCommand {
                     id: "5".to_string(),
                     trigger: "заблокируй компьютер".to_string(),
+                    aliases: vec![],
                     windows_cmd: "rundll32.exe user32.dll,LockWorkStation".to_string(),
                     linux_cmd: "loginctl lock-session".to_string(),
                     description: "Блокировка экрана".to_string(),

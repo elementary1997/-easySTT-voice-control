@@ -124,6 +124,8 @@ body {
 .field-hint em { color: var(--accent); font-style: normal; }
 
 .field-input {
+  width: 100%;
+  box-sizing: border-box;
   background: var(--bg-row);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -328,3 +330,51 @@ body {
 .os-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .os-label { display: flex; align-items: center; gap: 4px; }
 .hint { font-weight: 400; font-size: 11px; color: var(--text-dim); text-transform: none; letter-spacing: 0; }
+
+/* ── Aliases (multiple triggers) ─────────────────────────────────────────── */
+.aliases-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  background: var(--bg-row);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  box-sizing: border-box;
+  width: 100%;
+  transition: border-color .15s;
+}
+.aliases-row:focus-within { border-color: var(--accent); }
+.alias-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(76, 132, 255, 0.18);
+  border: 1px solid rgba(76, 132, 255, 0.35);
+  border-radius: 12px;
+  padding: 2px 8px 2px 10px;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.alias-remove {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  font-size: 14px;
+}
+.alias-remove:hover { color: #ff3550; }
+.alias-input {
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 13px;
+  min-width: 120px;
+  flex: 1;
+}
