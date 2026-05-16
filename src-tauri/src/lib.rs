@@ -119,9 +119,9 @@ fn get_current_platform() -> &'static str {
 // ─── Ollama Commands ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-async fn get_ollama_catalog(state: State<'_, AppState>) -> Vec<ollama::ModelCatalogEntry> {
+async fn get_ollama_catalog(state: State<'_, AppState>) -> Result<Vec<ollama::ModelCatalogEntry>, String> {
     let url = state.config.lock().unwrap().ollama_url.clone();
-    ollama::catalog_with_status(&url).await
+    Ok(ollama::catalog_with_status(&url).await)
 }
 
 #[tauri::command]
@@ -140,10 +140,11 @@ fn pull_ollama_model(
     cancel.store(false, Ordering::SeqCst);
     let app2 = app.clone();
     let mid = model_id.clone();
+    let mid2 = model_id.clone();
     tauri::async_runtime::spawn(async move {
-        let result = ollama::pull_model(&url, &model_id, move |status, percent| {
+        let result = ollama::pull_model(&url, &mid, move |status, percent| {
             let _ = app.emit("ollama-pull-progress", serde_json::json!({
-                "model": model_id,
+                "model": mid2,
                 "status": status,
                 "percent": percent,
             }));
