@@ -6,6 +6,7 @@ use server::SharedConfig;
 
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_store::StoreExt;
 
 const STORE_FILE: &str = "voice_control.json";
@@ -55,9 +56,19 @@ fn save_config(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
+    sync_autostart(&app, config.autostart);
     persist(&app, &config);
     *state.config.lock().unwrap() = config;
     Ok(())
+}
+
+fn sync_autostart(app: &AppHandle, enabled: bool) {
+    let mgr = app.autolaunch();
+    if enabled {
+        let _ = mgr.enable();
+    } else {
+        let _ = mgr.disable();
+    }
 }
 
 /// Немедленно выполняет команду по её id (кнопка «Тест» в UI).
@@ -106,6 +117,10 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--background"]),
+        ))
         .manage(AppState { config: shared_config.clone() })
         .setup(move |app| {
             // Загружаем сохранённый конфиг
@@ -116,6 +131,7 @@ pub fn run() {
                 .find(|w| w[0] == "--port")
                 .and_then(|w| w[1].parse().ok());
             let port = port_arg.unwrap_or(saved.port);
+            sync_autostart(app.handle(), saved.autostart);
             *shared_config.lock().unwrap() = saved;
 
             // HTTP-сервер

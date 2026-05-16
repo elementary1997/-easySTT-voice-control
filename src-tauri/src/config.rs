@@ -15,11 +15,16 @@ pub struct VoiceCommand {
     pub description: String,
 }
 
+fn default_true() -> bool { true }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginConfig {
     /// Включён ли плагин
     pub enabled: bool,
+    /// Регистрировать в автозапуске ОС (Windows/Linux)
+    #[serde(default = "default_true")]
+    pub autostart: bool,
     /// Имя агента (произносится перед командой), например «Вилли»
     pub agent_name: String,
     /// Порт HTTP-сервера (смена вступает в силу после перезапуска)
@@ -32,6 +37,7 @@ impl Default for PluginConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            autostart: true,
             agent_name: "Вилли".to_string(),
             port: 8790,
             commands: vec![

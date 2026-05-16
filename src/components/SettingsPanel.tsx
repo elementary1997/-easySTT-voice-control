@@ -14,6 +14,7 @@ interface VoiceCommand {
 
 interface PluginConfig {
   enabled: boolean;
+  autostart: boolean;
   agentName: string;
   port: number;
   commands: VoiceCommand[];
@@ -143,6 +144,7 @@ function EditModal({ cmd, onSave, onClose }: EditModalProps) {
 export default function SettingsPanel() {
   const [config, setConfig] = useState<PluginConfig>({
     enabled: true,
+    autostart: true,
     agentName: "Вилли",
     port: 8790,
     commands: [],
@@ -210,14 +212,24 @@ export default function SettingsPanel() {
           <span className="logo">🎙</span>
           <span>easySTT Voice Control</span>
         </div>
-        <label className="toggle-row" title="Включить / выключить плагин">
-          <input
-            type="checkbox"
-            checked={config.enabled}
-            onChange={(e) => setConfig((c) => ({ ...c, enabled: e.target.checked }))}
-          />
-          <span className="toggle-label">{config.enabled ? "Включён" : "Выключен"}</span>
-        </label>
+        <div className="header-toggles">
+          <label className="toggle-row" title="Включить / выключить плагин">
+            <input
+              type="checkbox"
+              checked={config.enabled}
+              onChange={(e) => setConfig((c) => ({ ...c, enabled: e.target.checked }))}
+            />
+            <span className="toggle-label">{config.enabled ? "Включён" : "Выключен"}</span>
+          </label>
+          <label className="toggle-row" title="Запускать автоматически при старте Windows / Linux">
+            <input
+              type="checkbox"
+              checked={config.autostart}
+              onChange={(e) => setConfig((c) => ({ ...c, autostart: e.target.checked }))}
+            />
+            <span className="toggle-label">Автозапуск</span>
+          </label>
+        </div>
       </div>
 
       {/* ── Agent settings ── */}

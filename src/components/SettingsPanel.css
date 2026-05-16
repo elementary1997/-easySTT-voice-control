@@ -53,6 +53,12 @@ body {
 }
 .logo { font-size: 18px; }
 
+.header-toggles {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .toggle-row {
   display: flex;
   align-items: center;
