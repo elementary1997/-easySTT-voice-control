@@ -30,6 +30,10 @@ struct InterceptRequest {
 #[serde(rename_all = "camelCase")]
 struct InterceptResponse {
     intercept: bool,
+    /// True when the agent name was detected in the text but no command matched.
+    /// easySTT uses this to trigger PTT recording (wake-word mode).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    agent_detected: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     matched_trigger: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -45,7 +49,7 @@ async fn intercept(
     if !cfg.enabled {
         return (
             StatusCode::OK,
-            Json(InterceptResponse { intercept: false, matched_trigger: None, feedback: None }),
+            Json(InterceptResponse { intercept: false, agent_detected: false, matched_trigger: None, feedback: None }),
         );
     }
 
@@ -57,7 +61,7 @@ async fn intercept(
         None => {
             return (
                 StatusCode::OK,
-                Json(InterceptResponse { intercept: false, matched_trigger: None, feedback: None }),
+                Json(InterceptResponse { intercept: false, agent_detected: false, matched_trigger: None, feedback: None }),
             );
         }
     };
@@ -76,6 +80,7 @@ async fn intercept(
                 StatusCode::OK,
                 Json(InterceptResponse {
                     intercept: true,
+                    agent_detected: true,
                     matched_trigger: Some(cmd.trigger.clone()),
                     feedback: Some(feedback),
                 }),
@@ -83,9 +88,10 @@ async fn intercept(
         }
     }
 
+    // Agent name was found but no command matched — signal wake-word to easySTT
     (
         StatusCode::OK,
-        Json(InterceptResponse { intercept: false, matched_trigger: None, feedback: None }),
+        Json(InterceptResponse { intercept: false, agent_detected: true, matched_trigger: None, feedback: None }),
     )
 }
 
