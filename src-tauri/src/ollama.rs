@@ -47,7 +47,7 @@ pub async fn list_models(url: &str) -> Vec<String> {
 // ─── NLU + response generation ────────────────────────────────────────────────
 
 pub struct NluResult {
-    pub command_id: Option<String>,
+    pub trigger: Option<String>,
     pub response_text: Option<String>,
 }
 
@@ -61,21 +61,27 @@ pub async fn nlu_and_respond(
     style: &str,
 ) -> anyhow::Result<NluResult> {
     if model_id.is_empty() {
-        return Ok(NluResult { command_id: None, response_text: None });
+        return Ok(NluResult { trigger: None, response_text: None });
     }
 
     let endpoint = format!("{}/v1/chat/completions", url.trim_end_matches('/'));
 
-    let commands_json: Vec<serde_json::Value> = commands
+    let commands_list: Vec<String> = commands
         .iter()
         .map(|c| {
-            serde_json::json!({
-                "id": c.id,
-                "trigger": c.trigger,
-                "aliases": c.aliases,
-                "description": c.description,
-                "close_trigger": c.close_trigger,
-            })
+            let mut line = format!("- \"{}\"", c.trigger);
+            if !c.description.is_empty() {
+                line.push_str(&format!(" ({})", c.description));
+            }
+            if !c.close_trigger.is_empty() {
+                line.push_str(&format!(" | закрыть: \"{}\"", c.close_trigger));
+            }
+            for alias in &c.aliases {
+                if !alias.is_empty() {
+                    line.push_str(&format!(" | alias: \"{}\"", alias));
+                }
+            }
+            line
         })
         .collect();
 
@@ -90,16 +96,16 @@ pub async fn nlu_and_respond(
 1. Определи, какую команду из списка имел в виду пользователь (или null если ни одна).
 2. Сгенерируй короткий ответ на русском (1–5 слов).
 
-Доступные команды:
+Доступные команды (верни точную фразу из кавычек в поле trigger):
 {commands}
 
 Пользователь сказал: "{user_text}"
 
 {style_hint}
 
-Ответь ТОЛЬКО валидным JSON (без текста до и после):
-{{"command_id": "id или null", "response": "твой ответ или null"}}"#,
-        commands = serde_json::to_string_pretty(&commands_json)?
+Ответь ТОЛЬКО валидным JSON (без текста до и после). Поле trigger — точная фраза триггера из списка выше, или null:
+{{"trigger": "точная фраза или null", "response": "твой ответ или null"}}"#,
+        commands = commands_list.join("\n")
     );
 
     let client = reqwest::Client::builder()
@@ -131,9 +137,9 @@ pub async fn nlu_and_respond(
         .trim();
 
     let parsed: serde_json::Value = serde_json::from_str(clean)
-        .unwrap_or_else(|_| serde_json::json!({ "command_id": null, "response": null }));
+        .unwrap_or_else(|_| serde_json::json!({ "trigger": null, "response": null }));
 
-    let command_id = parsed["command_id"]
+    let trigger = parsed["trigger"]
         .as_str()
         .filter(|&s| s != "null" && !s.is_empty())
         .map(|s| s.to_string());
@@ -143,5 +149,5 @@ pub async fn nlu_and_respond(
         .filter(|&s| s != "null" && !s.is_empty())
         .map(|s| s.to_string());
 
-    Ok(NluResult { command_id, response_text })
+    Ok(NluResult { trigger, response_text })
 }

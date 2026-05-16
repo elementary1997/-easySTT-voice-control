@@ -133,16 +133,32 @@ async fn intercept(
         .await
         {
             Ok(nlu) => {
-                if let Some(cmd_id) = nlu.command_id {
-                    if let Some(cmd) = cfg.commands.iter().find(|c| c.id == cmd_id) {
-                        let exec_cmd = if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd };
+                if let Some(ref trig) = nlu.trigger {
+                    let norm = normalize(trig);
+                    let found = cfg.commands.iter().find(|c| {
+                        normalize(&c.trigger) == norm
+                            || normalize(&c.close_trigger) == norm
+                            || c.aliases.iter().any(|a| normalize(a) == norm)
+                            || c.close_aliases.iter().any(|a| normalize(a) == norm)
+                    });
+                    if let Some(cmd) = found {
+                        let is_close = !cmd.close_trigger.is_empty()
+                            && (normalize(&cmd.close_trigger) == norm
+                                || cmd.close_aliases.iter().any(|a| normalize(a) == norm));
+                        let exec_cmd = if is_close {
+                            if cfg!(windows) { &cmd.windows_close_cmd } else { &cmd.linux_close_cmd }
+                        } else {
+                            if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd }
+                        };
                         if !exec_cmd.is_empty() {
                             execute_shell(exec_cmd);
                             maybe_speak(&cfg, nlu.response_text.as_deref());
+                            let matched = if is_close { cmd.close_trigger.clone() } else { cmd.trigger.clone() };
+                            let label = if cmd.description.is_empty() { matched.clone() } else { cmd.description.clone() };
                             return (StatusCode::OK, Json(InterceptResponse {
                                 intercept: true, agent_detected: true,
-                                matched_trigger: Some(cmd.trigger.clone()),
-                                feedback: Some(format!("AI: {}", cmd.description)),
+                                matched_trigger: Some(matched),
+                                feedback: Some(format!("AI: {}", label)),
                             }));
                         }
                     }

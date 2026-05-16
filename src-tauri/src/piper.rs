@@ -63,21 +63,28 @@ pub fn voice_catalog() -> Vec<PiperVoice> {
     let voices: &[(&str, &str, &str, u32, &str)] = &[
         (
             "ru_RU-irina-medium",
-            "Ирина",
+            "Ирина ♀",
             "female",
             65,
             "ru/ru_RU/irina/medium/ru_RU-irina-medium",
         ),
         (
+            "ru_RU-irina-low",
+            "Ирина ♀ (low)",
+            "female",
+            18,
+            "ru/ru_RU/irina/low/ru_RU-irina-low",
+        ),
+        (
             "ru_RU-denis-medium",
-            "Денис",
+            "Денис ♂",
             "male",
             65,
             "ru/ru_RU/denis/medium/ru_RU-denis-medium",
         ),
         (
             "ru_RU-ruslan-medium",
-            "Руслан",
+            "Руслан ♂",
             "male",
             65,
             "ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium",
@@ -162,7 +169,7 @@ pub async fn download_binary(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        std::process::Command::new("powershell")
+        let status = std::process::Command::new("powershell")
             .args([
                 "-NoProfile",
                 "-Command",
@@ -173,13 +180,15 @@ pub async fn download_binary(
                 ),
             ])
             .creation_flags(0x08000000)
-            .status()
-            .ok();
+            .status();
+        if let Err(e) = status {
+            return Err(anyhow::anyhow!("Ошибка распаковки: {e}"));
+        }
     }
 
     #[cfg(not(windows))]
     {
-        std::process::Command::new("tar")
+        let status = std::process::Command::new("tar")
             .args([
                 "-xzf",
                 &archive_path.to_string_lossy(),
@@ -187,15 +196,24 @@ pub async fn download_binary(
                 "-C",
                 &piper_dir.to_string_lossy(),
             ])
-            .status()
-            .ok();
-        std::process::Command::new("chmod")
+            .status();
+        if let Err(e) = status {
+            return Err(anyhow::anyhow!("Ошибка распаковки: {e}"));
+        }
+        let _ = std::process::Command::new("chmod")
             .args(["+x", &piper_exe().to_string_lossy()])
-            .status()
-            .ok();
+            .status();
     }
 
     let _ = std::fs::remove_file(&archive_path);
+
+    if !piper_exe().exists() {
+        return Err(anyhow::anyhow!(
+            "Распаковка завершена, но piper не найден. Проверьте архив или распакуйте вручную в: {}",
+            piper_dir.display()
+        ));
+    }
+
     Ok(())
 }
 
