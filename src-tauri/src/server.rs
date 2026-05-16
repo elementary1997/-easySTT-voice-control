@@ -75,21 +75,34 @@ async fn intercept(
     let parts = split_conjunctions(&command_text);
     if parts.len() > 1 {
         let mut executed: Vec<String> = Vec::new();
-        for part in &parts {
+        'parts: for part in &parts {
             for cmd in &cfg.commands {
+                // Открыть
                 let trigger = normalize(&cmd.trigger);
-                let hit = matches_trigger(part, &trigger)
-                    || cmd.aliases.iter().any(|a| matches_trigger(part, &normalize(a)));
-                if hit {
+                if matches_trigger(part, &trigger)
+                    || cmd.aliases.iter().any(|a| matches_trigger(part, &normalize(a)))
+                {
                     let exec_cmd = if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd };
                     if !exec_cmd.is_empty() {
                         execute_shell(exec_cmd);
-                        executed.push(
-                            if cmd.description.is_empty() { cmd.trigger.clone() }
-                            else { cmd.description.clone() }
-                        );
+                        executed.push(if cmd.description.is_empty() { cmd.trigger.clone() } else { cmd.description.clone() });
                     }
-                    break;
+                    continue 'parts;
+                }
+                // Закрыть
+                if !cmd.close_trigger.is_empty() {
+                    let ct = normalize(&cmd.close_trigger);
+                    if matches_trigger(part, &ct)
+                        || cmd.close_aliases.iter().any(|a| matches_trigger(part, &normalize(a)))
+                    {
+                        let exec_cmd = if cfg!(windows) { &cmd.windows_close_cmd } else { &cmd.linux_close_cmd };
+                        if !exec_cmd.is_empty() {
+                            execute_shell(exec_cmd);
+                            let label = if cmd.description.is_empty() { cmd.close_trigger.clone() } else { cmd.description.clone() };
+                            executed.push(format!("закрыть {}", label));
+                        }
+                        continue 'parts;
+                    }
                 }
             }
         }
@@ -112,10 +125,11 @@ async fn intercept(
 
 fn try_match_single(command_text: &str, cfg: &crate::config::PluginConfig) -> Option<(StatusCode, Json<InterceptResponse>)> {
     for cmd in &cfg.commands {
+        // Открыть
         let trigger = normalize(&cmd.trigger);
-        let hit = matches_trigger(command_text, &trigger)
-            || cmd.aliases.iter().any(|a| matches_trigger(command_text, &normalize(a)));
-        if hit {
+        if matches_trigger(command_text, &trigger)
+            || cmd.aliases.iter().any(|a| matches_trigger(command_text, &normalize(a)))
+        {
             let exec_cmd = if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd };
             let feedback = if exec_cmd.is_empty() {
                 format!("Команда «{}» не задана для этой платформы", cmd.trigger)
@@ -124,11 +138,30 @@ fn try_match_single(command_text: &str, cfg: &crate::config::PluginConfig) -> Op
                 format!("Выполняю: {}", if cmd.description.is_empty() { &cmd.trigger } else { &cmd.description })
             };
             return Some((StatusCode::OK, Json(InterceptResponse {
-                intercept: true,
-                agent_detected: true,
+                intercept: true, agent_detected: true,
                 matched_trigger: Some(cmd.trigger.clone()),
                 feedback: Some(feedback),
             })));
+        }
+        // Закрыть (если задано)
+        if !cmd.close_trigger.is_empty() {
+            let ct = normalize(&cmd.close_trigger);
+            if matches_trigger(command_text, &ct)
+                || cmd.close_aliases.iter().any(|a| matches_trigger(command_text, &normalize(a)))
+            {
+                let exec_cmd = if cfg!(windows) { &cmd.windows_close_cmd } else { &cmd.linux_close_cmd };
+                let feedback = if exec_cmd.is_empty() {
+                    format!("Команда закрытия «{}» не задана для этой платформы", cmd.close_trigger)
+                } else {
+                    execute_shell(exec_cmd);
+                    format!("Закрываю: {}", if cmd.description.is_empty() { &cmd.close_trigger } else { &cmd.description })
+                };
+                return Some((StatusCode::OK, Json(InterceptResponse {
+                    intercept: true, agent_detected: true,
+                    matched_trigger: Some(cmd.close_trigger.clone()),
+                    feedback: Some(feedback),
+                })));
+            }
         }
     }
     None

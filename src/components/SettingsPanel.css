@@ -197,7 +197,28 @@ body {
 }
 .cmd-row:hover { background: #1e2a40; }
 
-.cmd-trigger-text { font-size: 13px; }
+.cmd-trigger {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  min-width: 0;
+  justify-content: center;
+}
+.cmd-trigger-open {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cmd-trigger-close {
+  font-size: 11px;
+  color: var(--danger);
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .cmd-shell code {
   font-family: "JetBrains Mono", Consolas, monospace;
   font-size: 11px;
@@ -311,6 +332,56 @@ body {
   transition: background .15s;
 }
 .btn-secondary:hover { background: #1e2a40; }
+
+/* ─── Modal tabs ──────────────────────────────────────────────────────────── */
+.modal-shared-fields {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.modal-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  margin: 6px -24px 14px;
+  padding: 0 24px;
+}
+.modal-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color .12s, border-color .12s;
+  position: relative;
+}
+.modal-tab:hover:not(.active) { color: var(--text); }
+.modal-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.modal-tab.tab-close.active { color: var(--danger); border-bottom-color: var(--danger); }
+
+.tab-badge {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+}
+
+.close-tab-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  margin-top: 4px;
+}
 
 /* ─── Modal ───────────────────────────────────────────────────────────────── */
 .modal-backdrop {
