@@ -169,6 +169,8 @@ pub async fn download_binary(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        // ZIP содержит папку piper/ внутри — распаковываем в base, чтобы
+        // получилось base/piper/piper.exe = piper_exe()
         let status = std::process::Command::new("powershell")
             .args([
                 "-NoProfile",
@@ -176,7 +178,7 @@ pub async fn download_binary(
                 &format!(
                     "Expand-Archive -Force -Path '{}' -DestinationPath '{}'",
                     archive_path.display(),
-                    piper_dir.display()
+                    base.display()
                 ),
             ])
             .creation_flags(0x08000000)
@@ -209,8 +211,8 @@ pub async fn download_binary(
 
     if !piper_exe().exists() {
         return Err(anyhow::anyhow!(
-            "Распаковка завершена, но piper не найден. Проверьте архив или распакуйте вручную в: {}",
-            piper_dir.display()
+            "piper.exe не найден после распаковки (ожидался по пути: {}). Попробуйте скачать снова.",
+            piper_exe().display()
         ));
     }
 
