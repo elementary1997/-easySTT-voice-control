@@ -92,7 +92,7 @@ jobs:
         run: npm run build
 
       - name: Build standalone binary
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml --features custom-protocol
 
       - name: Upload binary to release
         env:
