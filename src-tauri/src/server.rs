@@ -120,55 +120,61 @@ async fn intercept(
         }
     }
 
-    // 3. LM Studio NLU — умный fallback когда точное совпадение не сработало
+    // 3. LM Studio NLU — запускаем в фоне, чтобы не ждать ответа модели.
+    // easySTT имеет короткий таймаут на /intercept; мыслительные модели (qwen3 и т.п.)
+    // генерируют reasoning_content перед answer — это может занять 5–30 с.
+    // Отвечаем easySTT сразу «агент обнаружен», а команду выполняем когда модель ответит.
     if cfg.ollama_enabled && !cfg.ollama_url.is_empty() && !cfg.ollama_model.is_empty() {
-        match crate::ollama::nlu_and_respond(
-            &cfg.ollama_url,
-            &cfg.ollama_model,
-            &cfg.agent_name,
-            &cfg.commands,
-            &command_text,
-            &cfg.voice_feedback_style,
-        )
-        .await
-        {
-            Ok(nlu) => {
-                if let Some(ref trig) = nlu.trigger {
-                    let norm = normalize(trig);
-                    let found = cfg.commands.iter().find(|c| {
-                        normalize(&c.trigger) == norm
-                            || normalize(&c.close_trigger) == norm
-                            || c.aliases.iter().any(|a| normalize(a) == norm)
-                            || c.close_aliases.iter().any(|a| normalize(a) == norm)
-                    });
-                    if let Some(cmd) = found {
-                        let is_close = !cmd.close_trigger.is_empty()
-                            && (normalize(&cmd.close_trigger) == norm
-                                || cmd.close_aliases.iter().any(|a| normalize(a) == norm));
-                        let exec_cmd = if is_close {
-                            if cfg!(windows) { &cmd.windows_close_cmd } else { &cmd.linux_close_cmd }
-                        } else {
-                            if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd }
-                        };
-                        if !exec_cmd.is_empty() {
-                            execute_shell(exec_cmd);
-                            maybe_speak(&cfg, nlu.response_text.as_deref());
-                            let matched = if is_close { cmd.close_trigger.clone() } else { cmd.trigger.clone() };
-                            let label = if cmd.description.is_empty() { matched.clone() } else { cmd.description.clone() };
-                            return (StatusCode::OK, Json(InterceptResponse {
-                                intercept: true, agent_detected: true,
-                                matched_trigger: Some(matched),
-                                feedback: Some(format!("AI: {}", label)),
-                            }));
+        let cfg2 = cfg.clone();
+        let text2 = command_text.clone();
+        tokio::spawn(async move {
+            match crate::ollama::nlu_and_respond(
+                &cfg2.ollama_url,
+                &cfg2.ollama_model,
+                &cfg2.agent_name,
+                &cfg2.commands,
+                &text2,
+                &cfg2.voice_feedback_style,
+            )
+            .await
+            {
+                Ok(nlu) => {
+                    if let Some(ref trig) = nlu.trigger {
+                        let norm = normalize(trig);
+                        let found = cfg2.commands.iter().find(|c| {
+                            normalize(&c.trigger) == norm
+                                || normalize(&c.close_trigger) == norm
+                                || c.aliases.iter().any(|a| normalize(a) == norm)
+                                || c.close_aliases.iter().any(|a| normalize(a) == norm)
+                        });
+                        if let Some(cmd) = found {
+                            let is_close = !cmd.close_trigger.is_empty()
+                                && (normalize(&cmd.close_trigger) == norm
+                                    || cmd.close_aliases.iter().any(|a| normalize(a) == norm));
+                            let exec_cmd = if is_close {
+                                if cfg!(windows) { &cmd.windows_close_cmd } else { &cmd.linux_close_cmd }
+                            } else {
+                                if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd }
+                            };
+                            if !exec_cmd.is_empty() {
+                                execute_shell(exec_cmd);
+                                maybe_speak(&cfg2, nlu.response_text.as_deref());
+                            }
                         }
                     }
                 }
-                // NLU не распознал команду — но агент был обнаружен
+                Err(e) => {
+                    eprintln!("[voice-control] NLU error: {e}");
+                }
             }
-            Err(e) => {
-                eprintln!("[voice-control] Ollama NLU error: {e}");
-            }
-        }
+        });
+
+        // Немедленно возвращаем «перехвачено» — easySTT не покажет текст,
+        // а команда выполнится фоновым тасками выше.
+        return (StatusCode::OK, Json(InterceptResponse {
+            intercept: true, agent_detected: true, matched_trigger: None,
+            feedback: Some("AI обрабатывает команду...".to_string()),
+        }));
     }
 
     // Агент обнаружен, команда не распознана → wake-word для easySTT

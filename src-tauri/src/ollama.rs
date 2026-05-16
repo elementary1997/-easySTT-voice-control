@@ -118,8 +118,10 @@ pub async fn nlu_and_respond(
             "model": model_id,
             "stream": false,
             "messages": [{ "role": "user", "content": prompt }],
-            "temperature": 0.2,
-            "max_tokens": 64,
+            "temperature": 0.1,
+            "max_tokens": 128,
+            // отключаем reasoning для qwen3 и аналогичных thinking-моделей
+            "enable_thinking": false,
         }))
         .send()
         .await?;
