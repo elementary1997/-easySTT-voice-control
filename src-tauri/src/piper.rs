@@ -115,6 +115,10 @@ async fn download_file(
         .timeout(Duration::from_secs(7200))
         .build()?;
     let resp = client.get(url).send().await?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(anyhow::anyhow!("Ошибка загрузки: HTTP {status} для {url}"));
+    }
     let total = resp.content_length().unwrap_or(0);
     let mut downloaded = 0u64;
     let mut file = std::fs::File::create(dest)?;
@@ -169,34 +173,41 @@ pub async fn download_binary(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // Распаковываем в piper_dir (файлы zip без вложенной папки)
-        let status = std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!(
-                    "Expand-Archive -Force -Path '{}' -DestinationPath '{}'",
-                    archive_path.display(),
-                    piper_dir.display()
-                ),
-            ])
+        // Распаковываем в уникальный temp-каталог, ищем piper.exe где бы он ни оказался,
+        // копируем всё содержимое его директории в piper_dir.
+        // Это работает независимо от структуры zip (с вложенной папкой или без).
+        let archive_str = archive_path.to_string_lossy().replace('\'', "''");
+        let dest_str = piper_dir.to_string_lossy().replace('\'', "''");
+        let ps_script = format!(
+            r#"try {{
+    $tmp = Join-Path $env:TEMP ('piper_' + [guid]::NewGuid().ToString('N'));
+    Add-Type -Assembly System.IO.Compression.FileSystem;
+    [IO.Compression.ZipFile]::ExtractToDirectory('{archive}', $tmp);
+    $exe = Get-ChildItem -Path $tmp -Filter 'piper.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1;
+    if ($exe -eq $null) {{ Write-Error 'piper.exe not found in archive'; exit 2 }};
+    New-Item -ItemType Directory -Force -Path '{dest}' | Out-Null;
+    Get-ChildItem -Path $exe.DirectoryName | ForEach-Object {{ Copy-Item -Path $_.FullName -Destination '{dest}' -Force -Recurse }};
+    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue;
+    exit 0
+}} catch {{ Write-Error $_; exit 1 }}"#,
+            archive = archive_str,
+            dest = dest_str
+        );
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
             .creation_flags(0x08000000)
-            .status();
-        if let Err(e) = status {
-            return Err(anyhow::anyhow!("Ошибка распаковки: {e}"));
-        }
-        // Если в zip была вложенная папка piper/, перемещаем содержимое на уровень выше
-        if !piper_exe().exists() {
-            let nested = piper_dir.join("piper");
-            if nested.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&nested) {
-                    for entry in entries.flatten() {
-                        let dest = piper_dir.join(entry.file_name());
-                        let _ = std::fs::rename(entry.path(), dest);
-                    }
-                }
-                let _ = std::fs::remove_dir(&nested);
+            .output();
+        match output {
+            Ok(out) if out.status.success() => {}
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                return Err(anyhow::anyhow!(
+                    "Ошибка распаковки (код {}): {}",
+                    out.status.code().unwrap_or(-1),
+                    stderr.trim()
+                ));
             }
+            Err(e) => return Err(anyhow::anyhow!("Не удалось запустить PowerShell: {e}")),
         }
     }
 
