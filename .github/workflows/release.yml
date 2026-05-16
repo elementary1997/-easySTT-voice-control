@@ -30,34 +30,36 @@ jobs:
 
           ## Установка
 
-          1. Скачайте бинарник для своей платформы
-          2. В easySTT → Настройки → 🧩 Плагины → **+ Добавить плагин**
-          3. Выберите скачанный файл, порт 8790
-          4. Говорите: *«Вилли, открой проводник»*
+          1. Скачайте бинарник для своей платформы ниже
+          2. В easySTT → Настройки → Плагины → **+ Добавить плагин**
+          3. Выберите скачанный файл — easySTT запустит его автоматически
+          4. Откройте настройки плагина и добавьте команды
+          5. Говорите: *«Вилли, открой браузер»*
 
           ## Файлы
 
           | Файл | Платформа |
           |------|-----------|
-          | \`*_x64-setup.exe\` | Windows |
-          | \`*_amd64.deb\` | Linux |"
+          | \`easySTT-voice-control-windows.exe\` | Windows (standalone, без установки) |
+          | \`easySTT-voice-control-linux\` | Linux (amd64) |"
 
           ID=$(gh release view "${{ github.ref_name }}" --json id --jq '.id')
           echo "release_id=$ID" >> $GITHUB_OUTPUT
 
-  release:
+  build:
     needs: create-release
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: ubuntu-22.04
-            name: Linux
+            binary: easySTT-voice-control-linux
+            src_binary: src-tauri/target/release/easystt-voice-control
           - platform: windows-latest
-            name: Windows
+            binary: easySTT-voice-control-windows.exe
+            src_binary: src-tauri/target/release/easystt-voice-control.exe
 
     runs-on: ${{ matrix.platform }}
-    name: Release (${{ matrix.name }})
 
     steps:
       - uses: actions/checkout@v4
@@ -86,15 +88,20 @@ jobs:
 
       - run: npm ci
 
-      - name: Build and upload
-        uses: tauri-apps/tauri-action@v0
+      - name: Build standalone binary
+        run: npx tauri build --bundles none
+
+      - name: Upload binary to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
+        shell: bash
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "${{ matrix.src_binary }}#${{ matrix.binary }}" \
+            --repo "${{ github.repository }}"
 
   publish-release:
-    needs: [create-release, release]
+    needs: [create-release, build]
     runs-on: ubuntu-latest
     steps:
       - name: Publish release
