@@ -1,13 +1,17 @@
 mod config;
 mod ollama;
+mod piper;
 mod server;
 mod tts;
 
 use config::PluginConfig;
 use server::SharedConfig;
 
-use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, State};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_store::StoreExt;
 
@@ -16,6 +20,7 @@ const STORE_KEY: &str = "config";
 
 pub struct AppState {
     pub config: SharedConfig,
+    pub dl_cancel: Arc<AtomicBool>,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -124,10 +129,89 @@ async fn check_ollama(url: String) -> bool {
     ollama::is_ollama_running(&url).await
 }
 
+// ─── TTS Commands ─────────────────────────────────────────────────────────────
+
 #[tauri::command]
 fn test_tts(state: State<'_, AppState>, text: String) {
-    let cfg = state.config.lock().unwrap();
-    tts::speak_with_engine(&text, &cfg.voice_engine, &cfg.voice_custom_cmd);
+    let cfg = state.config.lock().unwrap().clone();
+    tts::speak_with_engine(&text, &cfg.voice_engine, &cfg.piper_voice, &cfg.voice_custom_cmd);
+}
+
+// ─── Piper Commands ───────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PiperStatus {
+    binary_installed: bool,
+    voices: Vec<piper::PiperVoice>,
+}
+
+#[tauri::command]
+fn get_piper_status() -> PiperStatus {
+    PiperStatus {
+        binary_installed: piper::is_binary_installed(),
+        voices: piper::voice_catalog(),
+    }
+}
+
+#[tauri::command]
+fn download_piper_binary(state: State<'_, AppState>, app: AppHandle) {
+    let cancel = state.dl_cancel.clone();
+    cancel.store(false, Ordering::SeqCst);
+    tauri::async_runtime::spawn(async move {
+        let app2 = app.clone();
+        let result = piper::download_binary(
+            move |downloaded, total| {
+                let pct = if total > 0 { downloaded * 100 / total } else { 0 };
+                let _ = app.emit("piper-progress", serde_json::json!({
+                    "kind": "binary", "id": "binary", "pct": pct
+                }));
+            },
+            cancel,
+        )
+        .await;
+        match result {
+            Ok(()) => { let _ = app2.emit("piper-done", serde_json::json!({ "kind": "binary", "id": "binary" })); }
+            Err(e) => { let _ = app2.emit("piper-error", serde_json::json!({ "kind": "binary", "id": "binary", "error": e.to_string() })); }
+        }
+    });
+}
+
+#[tauri::command]
+fn download_piper_voice(voice_id: String, state: State<'_, AppState>, app: AppHandle) {
+    let voices = piper::voice_catalog();
+    let hf_path = match voices.iter().find(|v| v.id == voice_id) {
+        Some(v) => v.hf_path.clone(),
+        None => { return; }
+    };
+    let cancel = state.dl_cancel.clone();
+    cancel.store(false, Ordering::SeqCst);
+    let vid = voice_id.clone();
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let vid2 = vid.clone();
+        let result = piper::download_voice(
+            &vid,
+            &hf_path,
+            move |downloaded, total| {
+                let pct = if total > 0 { downloaded * 100 / total } else { 0 };
+                let _ = app.emit("piper-progress", serde_json::json!({
+                    "kind": "voice", "id": vid2, "pct": pct
+                }));
+            },
+            cancel,
+        )
+        .await;
+        match result {
+            Ok(()) => { let _ = app2.emit("piper-done", serde_json::json!({ "kind": "voice", "id": vid })); }
+            Err(e) => { let _ = app2.emit("piper-error", serde_json::json!({ "kind": "voice", "id": vid, "error": e.to_string() })); }
+        }
+    });
+}
+
+#[tauri::command]
+fn cancel_piper_download(state: State<'_, AppState>) {
+    state.dl_cancel.store(true, Ordering::SeqCst);
 }
 
 // ─── Export ───────────────────────────────────────────────────────────────────
@@ -148,6 +232,7 @@ fn export_commands(state: State<'_, AppState>) -> Result<String, String> {
 
 pub fn run() {
     let shared_config: SharedConfig = Arc::new(Mutex::new(PluginConfig::default()));
+    let dl_cancel = Arc::new(AtomicBool::new(false));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -155,7 +240,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--background"]),
         ))
-        .manage(AppState { config: shared_config.clone() })
+        .manage(AppState { config: shared_config.clone(), dl_cancel: dl_cancel.clone() })
         .setup(move |app| {
             let saved = load_from_store(app);
             let args: Vec<String> = std::env::args().collect();
@@ -199,6 +284,10 @@ pub fn run() {
             get_ai_models,
             check_ollama,
             test_tts,
+            get_piper_status,
+            download_piper_binary,
+            download_piper_voice,
+            cancel_piper_download,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска easySTT Voice Control");

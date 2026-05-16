@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./SettingsPanel.css";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,7 +32,22 @@ interface PluginConfig {
   voiceFeedbackEnabled: boolean;
   voiceFeedbackStyle: string;
   voiceEngine: string;
+  piperVoice: string;
   voiceCustomCmd: string;
+}
+
+interface PiperVoice {
+  id: string;
+  displayName: string;
+  gender: string;
+  sizeMb: number;
+  installed: boolean;
+  hfPath: string;
+}
+
+interface PiperStatus {
+  binaryInstalled: boolean;
+  voices: PiperVoice[];
 }
 
 const DEFAULT_CONFIG: PluginConfig = {
@@ -44,6 +60,7 @@ const DEFAULT_CONFIG: PluginConfig = {
   voiceFeedbackEnabled: false,
   voiceFeedbackStyle: "neutral",
   voiceEngine: "system",
+  piperVoice: "ru_RU-irina-medium",
   voiceCustomCmd: "",
 };
 
@@ -202,11 +219,35 @@ export default function SettingsPanel() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [ttsTestText, setTtsTestText] = useState("Привет! Я готов к работе.");
 
+  // Piper state
+  const [piperStatus, setPiperStatus] = useState<PiperStatus>({ binaryInstalled: false, voices: [] });
+  const [piperProgress, setPiperProgress] = useState<Record<string, number>>({});
+  const [piperDownloading, setPiperDownloading] = useState<string | null>(null);
+
   // ── Init ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     invoke<PluginConfig>("get_config").then(cfg => { setConfig(cfg); setOriginalPort(cfg.port); });
     invoke<string>("get_current_platform").then(p => setPlatform(p === "windows" ? "windows" : "linux"));
+  }, []);
+
+  // Piper download events
+  useEffect(() => {
+    const u1 = listen<{ kind: string; id: string; pct: number }>("piper-progress", ({ payload }) => {
+      setPiperProgress(p => ({ ...p, [payload.id]: payload.pct }));
+    });
+    const u2 = listen<{ kind: string; id: string }>("piper-done", ({ payload }) => {
+      setPiperDownloading(null);
+      setPiperProgress(p => { const n = { ...p }; delete n[payload.id]; return n; });
+      invoke<PiperStatus>("get_piper_status").then(setPiperStatus);
+      showFeedback(payload.id === "binary" ? "Piper установлен!" : "Голос загружен!");
+    });
+    const u3 = listen<{ kind: string; id: string; error: string }>("piper-error", ({ payload }) => {
+      setPiperDownloading(null);
+      setPiperProgress(p => { const n = { ...p }; delete n[payload.id]; return n; });
+      showFeedback(`Ошибка: ${payload.error}`);
+    });
+    return () => { u1.then(f => f()); u2.then(f => f()); u3.then(f => f()); };
   }, []);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -338,6 +379,29 @@ export default function SettingsPanel() {
   const handleTestTts = useCallback(() => {
     invoke("test_tts", { text: ttsTestText }).catch(e => showFeedback(`TTS ошибка: ${e}`));
   }, [ttsTestText]);
+
+  const loadPiperStatus = useCallback(() => {
+    invoke<PiperStatus>("get_piper_status").then(setPiperStatus);
+  }, []);
+
+  useEffect(() => {
+    if (mainTab === "ai") loadPiperStatus();
+  }, [mainTab, loadPiperStatus]);
+
+  const handleDownloadBinary = useCallback(() => {
+    setPiperDownloading("binary");
+    invoke("download_piper_binary");
+  }, []);
+
+  const handleDownloadVoice = useCallback((voiceId: string) => {
+    setPiperDownloading(voiceId);
+    invoke("download_piper_voice", { voiceId });
+  }, []);
+
+  const handleCancelPiper = useCallback(() => {
+    invoke("cancel_piper_download");
+    setPiperDownloading(null);
+  }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -559,30 +623,105 @@ export default function SettingsPanel() {
 
                 <label className="field-label" style={{ marginTop: 12 }}>Голосовой движок</label>
                 <div className="style-selector">
-                  <label className={`style-option ${config.voiceEngine === "system" ? "style-option--active" : ""}`}>
-                    <input type="radio" name="engine" value="system" checked={config.voiceEngine === "system"}
-                      onChange={() => setConfig(c => ({ ...c, voiceEngine: "system" }))} />
-                    <span className="style-label">Системный</span>
-                    <span className="style-example">SAPI / espeak-ng</span>
-                  </label>
-                  <label className={`style-option ${config.voiceEngine === "custom" ? "style-option--active" : ""}`}>
-                    <input type="radio" name="engine" value="custom" checked={config.voiceEngine === "custom"}
-                      onChange={() => setConfig(c => ({ ...c, voiceEngine: "custom" }))} />
-                    <span className="style-label">Свой движок</span>
-                    <span className="style-example">произвольная команда</span>
-                  </label>
+                  {(["system", "piper", "custom"] as const).map(eng => (
+                    <label key={eng} className={`style-option ${config.voiceEngine === eng ? "style-option--active" : ""}`}>
+                      <input type="radio" name="engine" value={eng} checked={config.voiceEngine === eng}
+                        onChange={() => setConfig(c => ({ ...c, voiceEngine: eng }))} />
+                      <span className="style-label">
+                        {eng === "system" ? "Системный" : eng === "piper" ? "Piper TTS" : "Свой"}
+                      </span>
+                      <span className="style-example">
+                        {eng === "system" ? "SAPI / espeak-ng" : eng === "piper" ? "офлайн, быстрый" : "своя команда"}
+                      </span>
+                    </label>
+                  ))}
                 </div>
+
+                {/* ── Piper section ── */}
+                {config.voiceEngine === "piper" && (
+                  <div className="piper-section">
+                    {/* Binary status */}
+                    <div className="piper-binary-row">
+                      <span className={`piper-binary-status ${piperStatus.binaryInstalled ? "piper-binary-status--ok" : ""}`}>
+                        {piperStatus.binaryInstalled ? "● Piper установлен" : "● Piper не установлен"}
+                      </span>
+                      {!piperStatus.binaryInstalled && (
+                        piperDownloading === "binary" ? (
+                          <div className="piper-binary-dl">
+                            <div className="piper-progress-wrap">
+                              <div className="piper-progress-bar" style={{ width: `${piperProgress["binary"] ?? 0}%` }} />
+                              <span className="piper-progress-label">{piperProgress["binary"] ?? 0}%</span>
+                            </div>
+                            <button className="btn-secondary btn-small" onClick={handleCancelPiper}>Отмена</button>
+                          </div>
+                        ) : (
+                          <button className="btn-primary btn-small" onClick={handleDownloadBinary}>
+                            Скачать (~20 MB)
+                          </button>
+                        )
+                      )}
+                    </div>
+
+                    {/* Voice catalog */}
+                    {piperStatus.binaryInstalled && (
+                      <>
+                        <label className="field-label" style={{ marginTop: 10 }}>Голос</label>
+                        <div className="piper-voices">
+                          {piperStatus.voices.map(v => {
+                            const isSelected = config.piperVoice === v.id;
+                            const isDl = piperDownloading === v.id;
+                            const pct = piperProgress[v.id] ?? 0;
+                            return (
+                              <div key={v.id}
+                                className={`piper-voice-card ${isSelected ? "piper-voice-card--selected" : ""}`}
+                                onClick={() => v.installed && setConfig(c => ({ ...c, piperVoice: v.id }))}>
+                                <div className="piper-voice-top">
+                                  <div className="piper-voice-info">
+                                    <span className="piper-voice-name">{v.displayName}</span>
+                                    <span className="piper-voice-gender">{v.gender === "female" ? "♀" : "♂"}</span>
+                                    <span className="piper-voice-size">{v.sizeMb} MB</span>
+                                  </div>
+                                  <div className="piper-voice-action">
+                                    {v.installed ? (
+                                      isSelected
+                                        ? <span className="piper-voice-active">✓ Выбран</span>
+                                        : <span className="piper-voice-installed">Установлен</span>
+                                    ) : isDl ? (
+                                      <button className="btn-danger btn-small" onClick={e => { e.stopPropagation(); handleCancelPiper(); }}>
+                                        Отмена
+                                      </button>
+                                    ) : (
+                                      <button className="btn-primary btn-small" onClick={e => { e.stopPropagation(); handleDownloadVoice(v.id); }}>
+                                        Скачать
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                {isDl && (
+                                  <div className="piper-progress-wrap" style={{ marginTop: 6 }}>
+                                    <div className="piper-progress-bar" style={{ width: `${pct}%` }} />
+                                    <span className="piper-progress-label">{pct}%</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {config.voiceEngine === "custom" && (
                   <>
                     <label className="field-label" style={{ marginTop: 8 }}>
-                      Команда <span className="hint">(<em>{"{text}"}</em> будет заменён на текст)</span>
+                      Команда <span className="hint">(<em>{"{text}"}</em> заменяется на текст)</span>
                     </label>
                     <input className="field-input monospace" placeholder='say "{text}"'
                       value={config.voiceCustomCmd}
                       onChange={e => setConfig(c => ({ ...c, voiceCustomCmd: e.target.value }))} />
                     <span className="field-hint" style={{ marginTop: 2 }}>
-                      Пример Windows: <em>PowerShell -c "Add-Type -A System.Speech; ...</em>
+                      Примеры: <em>espeak-ng -v ru "{"{text}"}"</em> · <em>festival --tts &lt;&lt;&lt; "{"{text}"}"</em>
                     </span>
                   </>
                 )}

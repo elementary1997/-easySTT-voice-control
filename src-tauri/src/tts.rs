@@ -4,20 +4,24 @@ pub fn speak(text: &str) {
 }
 
 /// Произносит текст с учётом выбранного движка.
-pub fn speak_with_engine(text: &str, engine: &str, custom_cmd: &str) {
-    let text = text.to_string();
-    let engine = engine.to_string();
-    let custom_cmd = custom_cmd.to_string();
-    std::thread::spawn(move || {
-        if engine == "custom" && !custom_cmd.is_empty() {
-            speak_custom(&text, &custom_cmd);
-        } else {
-            #[cfg(windows)]
-            speak_windows(&text);
-            #[cfg(not(windows))]
-            speak_linux(&text);
+pub fn speak_with_engine(text: &str, engine: &str, piper_voice: &str, custom_cmd: &str) {
+    match engine {
+        "piper" => crate::piper::speak(text, piper_voice),
+        "custom" if !custom_cmd.is_empty() => {
+            let text = text.to_string();
+            let custom_cmd = custom_cmd.to_string();
+            std::thread::spawn(move || speak_custom(&text, &custom_cmd));
         }
-    });
+        _ => {
+            let text = text.to_string();
+            std::thread::spawn(move || {
+                #[cfg(windows)]
+                speak_windows(&text);
+                #[cfg(not(windows))]
+                speak_linux(&text);
+            });
+        }
+    }
 }
 
 fn speak_custom(text: &str, cmd_template: &str) {

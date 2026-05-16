@@ -827,6 +827,126 @@ body {
 .tts-test-row .field-input { flex: 1; }
 .tts-test-row .btn-secondary { flex-shrink: 0; white-space: nowrap; }
 
+/* ─── Piper TTS ───────────────────────────────────────────────────────────── */
+.piper-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.piper-binary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-row);
+  border: 1px solid var(--border);
+}
+
+.piper-binary-status {
+  font-size: 12px;
+  font-weight: 500;
+  color: #fbbf24;
+}
+.piper-binary-status--ok { color: var(--green); }
+
+.piper-binary-dl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  margin-left: 12px;
+}
+
+.piper-voices {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.piper-voice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-row);
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.piper-voice-card:hover { background: #1e2a40; }
+.piper-voice-card--selected {
+  border-color: var(--accent);
+  background: rgba(76, 132, 255, 0.08);
+}
+
+.piper-voice-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.piper-voice-info {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.piper-voice-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.piper-voice-gender { font-size: 12px; color: var(--text-dim); }
+.piper-voice-size { font-size: 11px; color: var(--text-dim); }
+
+.piper-voice-action { flex-shrink: 0; }
+
+.piper-voice-active {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green);
+}
+.piper-voice-installed {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.piper-progress-wrap {
+  position: relative;
+  height: 14px;
+  flex: 1;
+  min-width: 80px;
+  background: var(--bg-section);
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.piper-progress-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: var(--accent);
+  border-radius: 7px;
+  transition: width .3s ease;
+}
+.piper-progress-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0,0,0,.7);
+}
+
 /* ─── AI misc ─────────────────────────────────────────────────────────────── */
 .ai-no-models {
   font-size: 12px;
