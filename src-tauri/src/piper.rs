@@ -169,8 +169,7 @@ pub async fn download_binary(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // ZIP содержит папку piper/ внутри — распаковываем в base, чтобы
-        // получилось base/piper/piper.exe = piper_exe()
+        // Распаковываем в piper_dir (файлы zip без вложенной папки)
         let status = std::process::Command::new("powershell")
             .args([
                 "-NoProfile",
@@ -178,13 +177,26 @@ pub async fn download_binary(
                 &format!(
                     "Expand-Archive -Force -Path '{}' -DestinationPath '{}'",
                     archive_path.display(),
-                    base.display()
+                    piper_dir.display()
                 ),
             ])
             .creation_flags(0x08000000)
             .status();
         if let Err(e) = status {
             return Err(anyhow::anyhow!("Ошибка распаковки: {e}"));
+        }
+        // Если в zip была вложенная папка piper/, перемещаем содержимое на уровень выше
+        if !piper_exe().exists() {
+            let nested = piper_dir.join("piper");
+            if nested.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&nested) {
+                    for entry in entries.flatten() {
+                        let dest = piper_dir.join(entry.file_name());
+                        let _ = std::fs::rename(entry.path(), dest);
+                    }
+                }
+                let _ = std::fs::remove_dir(&nested);
+            }
         }
     }
 

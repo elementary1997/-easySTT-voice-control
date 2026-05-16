@@ -416,11 +416,6 @@ export default function SettingsPanel() {
         </div>
         <div className="header-toggles">
           <label className="toggle-row">
-            <input type="checkbox" checked={config.enabled}
-              onChange={e => setConfig(c => ({ ...c, enabled: e.target.checked }))} />
-            <span className="toggle-label">{config.enabled ? "Включён" : "Выключен"}</span>
-          </label>
-          <label className="toggle-row">
             <input type="checkbox" checked={config.autostart}
               onChange={e => setConfig(c => ({ ...c, autostart: e.target.checked }))} />
             <span className="toggle-label">Автозапуск</span>
@@ -442,7 +437,7 @@ export default function SettingsPanel() {
             <label className="field-label">Порт</label>
             <input className="field-input monospace" type="number" min={1024} max={65535}
               value={config.port} onChange={e => setConfig(c => ({ ...c, port: Number(e.target.value) }))} />
-            <span className="field-hint">:{config.port}/intercept</span>
+            <span className="field-hint">Перезапустите плагин после смены порта</span>
           </div>
         </div>
       </section>
