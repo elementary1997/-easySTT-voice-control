@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./SettingsPanel.css";
 
@@ -11,6 +11,7 @@ interface VoiceCommand {
   windowsCmd: string;
   linuxCmd: string;
   description: string;
+  category: string;
 }
 
 interface PluginConfig {
@@ -21,16 +22,22 @@ interface PluginConfig {
   commands: VoiceCommand[];
 }
 
+const PRESET_CATEGORIES = ["Приложения", "Браузер", "Система", "Настройки", "Утилиты"];
+const CATEGORY_ORDER = [...PRESET_CATEGORIES];
+
 const EMPTY_COMMAND: Omit<VoiceCommand, "id"> = {
   trigger: "",
   aliases: [],
   windowsCmd: "",
   linuxCmd: "",
   description: "",
+  category: "",
 };
 
-function newId() {
-  return crypto.randomUUID();
+function newId() { return crypto.randomUUID(); }
+
+function normalizeTrigger(t: string): string {
+  return t.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
 // ─── Subcomponents ────────────────────────────────────────────────────────────
@@ -45,7 +52,6 @@ interface CommandRowProps {
 
 function CommandRow({ cmd, platform, onEdit, onDelete, onTest }: CommandRowProps) {
   const platformCmd = platform === "windows" ? cmd.windowsCmd : cmd.linuxCmd;
-
   return (
     <div className="cmd-row">
       <div className="cmd-trigger">
@@ -81,9 +87,7 @@ function EditModal({ cmd, onSave, onClose }: EditModalProps) {
 
   const addAlias = () => {
     const v = aliasInput.trim();
-    if (v && !form.aliases.includes(v)) {
-      set("aliases", [...form.aliases, v]);
-    }
+    if (v && !form.aliases.includes(v)) set("aliases", [...form.aliases, v]);
     setAliasInput("");
   };
 
@@ -108,6 +112,18 @@ function EditModal({ cmd, onSave, onClose }: EditModalProps) {
           onChange={(e) => set("trigger", e.target.value)}
           autoFocus
         />
+
+        <label className="field-label">Категория <span className="hint">(необязательно)</span></label>
+        <input
+          className="field-input"
+          list="category-suggestions"
+          placeholder="Приложения"
+          value={form.category}
+          onChange={(e) => set("category", e.target.value)}
+        />
+        <datalist id="category-suggestions">
+          {PRESET_CATEGORIES.map((c) => <option key={c} value={c} />)}
+        </datalist>
 
         <label className="field-label">Синонимы <span className="hint">(необязательно, Enter — добавить)</span></label>
         <div className="aliases-row">
@@ -156,11 +172,7 @@ function EditModal({ cmd, onSave, onClose }: EditModalProps) {
 
         <div className="modal-footer">
           <button className="btn-secondary" onClick={onClose}>Отмена</button>
-          <button
-            className="btn-primary"
-            onClick={handleSave}
-            disabled={!form.trigger.trim()}
-          >
+          <button className="btn-primary" onClick={handleSave} disabled={!form.trigger.trim()}>
             Сохранить
           </button>
         </div>
@@ -185,6 +197,7 @@ export default function SettingsPanel() {
   const [testFeedback, setTestFeedback] = useState<string>("");
   const [portWarning, setPortWarning] = useState(false);
   const [originalPort, setOriginalPort] = useState(8790);
+  const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     invoke<PluginConfig>("get_config").then((cfg) => {
@@ -195,6 +208,33 @@ export default function SettingsPanel() {
       setPlatform(p === "windows" ? "windows" : "linux");
     });
   }, []);
+
+  // ── Grouped commands ──────────────────────────────────────────────────────
+
+  const grouped = useMemo(() => {
+    const map: Record<string, VoiceCommand[]> = {};
+    for (const cmd of config.commands) {
+      const cat = cmd.category?.trim() || "Другое";
+      if (!map[cat]) map[cat] = [];
+      map[cat].push(cmd);
+    }
+    return map;
+  }, [config.commands]);
+
+  const sortedCats = useMemo(() => {
+    return Object.keys(grouped).sort((a, b) => {
+      const ia = CATEGORY_ORDER.indexOf(a);
+      const ib = CATEGORY_ORDER.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      if (a === "Другое") return 1;
+      if (b === "Другое") return -1;
+      return a.localeCompare(b, "ru");
+    });
+  }, [grouped]);
+
+  // ── Actions ───────────────────────────────────────────────────────────────
 
   const handleSave = useCallback(async () => {
     await invoke("save_config", { config });
@@ -231,8 +271,73 @@ export default function SettingsPanel() {
     setEditTarget(null);
   }, []);
 
+  // ── Export ────────────────────────────────────────────────────────────────
+
+  const handleExport = useCallback(() => {
+    const data = JSON.stringify(config.commands, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "voice-commands.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [config.commands]);
+
+  // ── Import ────────────────────────────────────────────────────────────────
+
+  const handleImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const raw = JSON.parse(ev.target?.result as string);
+        const incoming: VoiceCommand[] = Array.isArray(raw) ? raw : [];
+
+        // Build set of all existing normalized triggers + aliases
+        const existingKeys = new Set(
+          config.commands.flatMap((c) => [
+            normalizeTrigger(c.trigger),
+            ...c.aliases.map(normalizeTrigger),
+          ])
+        );
+
+        let added = 0;
+        let skipped = 0;
+        const toAdd: VoiceCommand[] = [];
+
+        for (const cmd of incoming) {
+          if (!cmd.trigger?.trim()) { skipped++; continue; }
+          const norm = normalizeTrigger(cmd.trigger);
+          if (existingKeys.has(norm)) { skipped++; continue; }
+          toAdd.push({ ...cmd, id: newId(), category: cmd.category || "" });
+          existingKeys.add(norm);
+          added++;
+        }
+
+        if (toAdd.length > 0) {
+          setConfig((c) => ({ ...c, commands: [...c.commands, ...toAdd] }));
+        }
+
+        const msg = added > 0
+          ? `Добавлено: ${added}${skipped > 0 ? `, пропущено дублей: ${skipped}` : ""}`
+          : `Все команды уже есть (пропущено: ${skipped})`;
+        setTestFeedback(msg);
+        setTimeout(() => setTestFeedback(""), 3500);
+      } catch {
+        setTestFeedback("Ошибка: не удалось разобрать JSON");
+        setTimeout(() => setTestFeedback(""), 3000);
+      }
+      e.target.value = "";
+    };
+    reader.readAsText(file);
+  }, [config.commands]);
+
   const openEdit = (cmd: VoiceCommand) => setEditTarget(cmd);
   const openNew = () => setEditTarget("new");
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="panel">
@@ -299,6 +404,19 @@ export default function SettingsPanel() {
           <h2 className="section-title">Команды</h2>
           <div className="section-actions">
             <span className="os-badge">{platform === "windows" ? "🪟 Windows" : "🐧 Linux"}</span>
+            <button className="btn-secondary btn-small" onClick={handleExport} title="Сохранить команды в JSON" disabled={config.commands.length === 0}>
+              Экспорт
+            </button>
+            <button className="btn-secondary btn-small" onClick={() => importRef.current?.click()} title="Загрузить команды из JSON">
+              Импорт
+            </button>
+            <input
+              ref={importRef}
+              type="file"
+              accept=".json"
+              style={{ display: "none" }}
+              onChange={handleImport}
+            />
             <button className="btn-primary btn-small" onClick={openNew}>+ Добавить</button>
           </div>
         </div>
@@ -315,15 +433,20 @@ export default function SettingsPanel() {
               <span>Описание</span>
               <span />
             </div>
-            {config.commands.map((cmd) => (
-              <CommandRow
-                key={cmd.id}
-                cmd={cmd}
-                platform={platform}
-                onEdit={openEdit}
-                onDelete={handleDeleteCmd}
-                onTest={handleTest}
-              />
+            {sortedCats.map((cat) => (
+              <div key={cat} className="cmd-category-group">
+                <div className="cmd-category-header">{cat}</div>
+                {grouped[cat].map((cmd) => (
+                  <CommandRow
+                    key={cmd.id}
+                    cmd={cmd}
+                    platform={platform}
+                    onEdit={openEdit}
+                    onDelete={handleDeleteCmd}
+                    onTest={handleTest}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         )}

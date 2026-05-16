@@ -5,12 +5,14 @@ use serde::{Deserialize, Serialize};
 pub struct VoiceCommand {
     pub id: String,
     pub trigger: String,
-    /// Дополнительные фразы-триггеры (синонимы). Serde default = [] для старых конфигов.
     #[serde(default)]
     pub aliases: Vec<String>,
     pub windows_cmd: String,
     pub linux_cmd: String,
     pub description: String,
+    /// Категория для группировки в UI. Пустая строка = «Другое».
+    #[serde(default)]
+    pub category: String,
 }
 
 fn default_true() -> bool { true }
@@ -46,6 +48,7 @@ impl Default for PluginConfig {
                     windows_cmd: "explorer.exe".to_string(),
                     linux_cmd: "xdg-open ~".to_string(),
                     description: "Файловый менеджер".to_string(),
+                    category: "Приложения".to_string(),
                 },
                 VoiceCommand {
                     id: "2".to_string(),
@@ -54,6 +57,7 @@ impl Default for PluginConfig {
                     windows_cmd: "start msedge".to_string(),
                     linux_cmd: "xdg-open https://google.com".to_string(),
                     description: "Браузер".to_string(),
+                    category: "Приложения".to_string(),
                 },
                 VoiceCommand {
                     id: "3".to_string(),
@@ -62,6 +66,7 @@ impl Default for PluginConfig {
                     windows_cmd: "calc.exe".to_string(),
                     linux_cmd: "gnome-calculator || kcalc || galculator".to_string(),
                     description: "Калькулятор".to_string(),
+                    category: "Приложения".to_string(),
                 },
                 VoiceCommand {
                     id: "4".to_string(),
@@ -70,6 +75,7 @@ impl Default for PluginConfig {
                     windows_cmd: "notepad.exe".to_string(),
                     linux_cmd: "gedit || kate || nano".to_string(),
                     description: "Текстовый редактор".to_string(),
+                    category: "Приложения".to_string(),
                 },
                 VoiceCommand {
                     id: "5".to_string(),
@@ -78,6 +84,7 @@ impl Default for PluginConfig {
                     windows_cmd: "rundll32.exe user32.dll,LockWorkStation".to_string(),
                     linux_cmd: "loginctl lock-session".to_string(),
                     description: "Блокировка экрана".to_string(),
+                    category: "Система".to_string(),
                 },
             ],
         }

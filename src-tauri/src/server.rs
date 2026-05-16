@@ -66,10 +66,55 @@ async fn intercept(
         }
     };
 
+    // 1. Ищем одиночную команду (точное совпадение)
+    if let Some(resp) = try_match_single(&command_text, &cfg) {
+        return resp;
+    }
+
+    // 2. Пробуем последовательное выполнение: «открой браузер и открой калькулятор»
+    let parts = split_conjunctions(&command_text);
+    if parts.len() > 1 {
+        let mut executed: Vec<String> = Vec::new();
+        for part in &parts {
+            for cmd in &cfg.commands {
+                let trigger = normalize(&cmd.trigger);
+                let hit = matches_trigger(part, &trigger)
+                    || cmd.aliases.iter().any(|a| matches_trigger(part, &normalize(a)));
+                if hit {
+                    let exec_cmd = if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd };
+                    if !exec_cmd.is_empty() {
+                        execute_shell(exec_cmd);
+                        executed.push(
+                            if cmd.description.is_empty() { cmd.trigger.clone() }
+                            else { cmd.description.clone() }
+                        );
+                    }
+                    break;
+                }
+            }
+        }
+        if !executed.is_empty() {
+            return (StatusCode::OK, Json(InterceptResponse {
+                intercept: true,
+                agent_detected: true,
+                matched_trigger: None,
+                feedback: Some(format!("Выполняю: {}", executed.join(" → "))),
+            }));
+        }
+    }
+
+    // Имя агента найдено, команда не распознана — wake-word сигнал для easySTT
+    (
+        StatusCode::OK,
+        Json(InterceptResponse { intercept: false, agent_detected: true, matched_trigger: None, feedback: None }),
+    )
+}
+
+fn try_match_single(command_text: &str, cfg: &crate::config::PluginConfig) -> Option<(StatusCode, Json<InterceptResponse>)> {
     for cmd in &cfg.commands {
         let trigger = normalize(&cmd.trigger);
-        let hit = matches_trigger(&command_text, &trigger)
-            || cmd.aliases.iter().any(|a| matches_trigger(&command_text, &normalize(a)));
+        let hit = matches_trigger(command_text, &trigger)
+            || cmd.aliases.iter().any(|a| matches_trigger(command_text, &normalize(a)));
         if hit {
             let exec_cmd = if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd };
             let feedback = if exec_cmd.is_empty() {
@@ -78,23 +123,34 @@ async fn intercept(
                 execute_shell(exec_cmd);
                 format!("Выполняю: {}", if cmd.description.is_empty() { &cmd.trigger } else { &cmd.description })
             };
-            return (
-                StatusCode::OK,
-                Json(InterceptResponse {
-                    intercept: true,
-                    agent_detected: true,
-                    matched_trigger: Some(cmd.trigger.clone()),
-                    feedback: Some(feedback),
-                }),
-            );
+            return Some((StatusCode::OK, Json(InterceptResponse {
+                intercept: true,
+                agent_detected: true,
+                matched_trigger: Some(cmd.trigger.clone()),
+                feedback: Some(feedback),
+            })));
         }
     }
+    None
+}
 
-    // Agent name was found but no command matched — signal wake-word to easySTT
-    (
-        StatusCode::OK,
-        Json(InterceptResponse { intercept: false, agent_detected: true, matched_trigger: None, feedback: None }),
-    )
+/// Разбивает текст по союзам-разделителям для последовательного выполнения команд.
+fn split_conjunctions(text: &str) -> Vec<String> {
+    let separators = [" и ", " затем ", " потом ", " а затем ", " а потом ", " также ", " and ", " then "];
+    let mut parts = vec![text.to_string()];
+    for sep in &separators {
+        let mut new_parts = Vec::new();
+        for part in &parts {
+            for sub in part.split(sep) {
+                let s = sub.trim().to_string();
+                if !s.is_empty() {
+                    new_parts.push(s);
+                }
+            }
+        }
+        parts = new_parts;
+    }
+    parts
 }
 
 /// Убираем имя агента + разделители (запятые, пробелы) из начала строки.

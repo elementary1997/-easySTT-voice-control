@@ -152,6 +152,27 @@ body {
   border: 1px solid var(--border);
 }
 
+.cmd-category-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.cmd-category-header {
+  padding: 5px 10px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--accent);
+  background: rgba(76, 132, 255, 0.07);
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.cmd-category-group:first-child .cmd-category-header {
+  border-top: none;
+}
+
 .cmd-list-header,
 .cmd-row {
   display: grid;
