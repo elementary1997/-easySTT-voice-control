@@ -25,9 +25,10 @@ pub struct VoiceCommand {
 }
 
 fn default_true() -> bool { true }
-fn default_ollama_url() -> String { "http://127.0.0.1:11434".to_string() }
-fn default_ollama_model() -> String { "llama3.2:1b".to_string() }
+fn default_ollama_url() -> String { "http://localhost:1234".to_string() }
+fn default_ollama_model() -> String { String::new() }
 fn default_voice_style() -> String { "neutral".to_string() }
+fn default_voice_engine() -> String { "system".to_string() }
 
 fn default_categories() -> Vec<String> {
     vec![
@@ -67,6 +68,12 @@ pub struct PluginConfig {
     /// "neutral" | "fun"
     #[serde(default = "default_voice_style")]
     pub voice_feedback_style: String,
+    /// "system" | "custom"
+    #[serde(default = "default_voice_engine")]
+    pub voice_engine: String,
+    /// Шаблон команды для кастомного движка. {text} заменяется на текст.
+    #[serde(default)]
+    pub voice_custom_cmd: String,
 }
 
 impl Default for PluginConfig {
@@ -82,6 +89,8 @@ impl Default for PluginConfig {
             ollama_model: default_ollama_model(),
             voice_feedback_enabled: false,
             voice_feedback_style: default_voice_style(),
+            voice_engine: default_voice_engine(),
+            voice_custom_cmd: String::new(),
             commands: vec![
                 VoiceCommand {
                     id: "1".to_string(),

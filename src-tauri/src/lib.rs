@@ -6,11 +6,8 @@ mod tts;
 use config::PluginConfig;
 use server::SharedConfig;
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
-use tauri::{AppHandle, Emitter, Manager, State};
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_store::StoreExt;
 
@@ -19,7 +16,6 @@ const STORE_KEY: &str = "config";
 
 pub struct AppState {
     pub config: SharedConfig,
-    pub pull_cancel: Arc<AtomicBool>,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -77,7 +73,6 @@ fn sync_autostart(app: &AppHandle, enabled: bool) {
     }
 }
 
-/// Немедленно выполняет команду по её id (кнопка «Тест» в UI).
 #[tauri::command]
 fn test_command(command_id: String, state: State<'_, AppState>) -> Result<String, String> {
     let cfg = state.config.lock().unwrap().clone();
@@ -97,7 +92,7 @@ fn test_command(command_id: String, state: State<'_, AppState>) -> Result<String
         use std::os::windows::process::CommandExt;
         std::process::Command::new("cmd")
             .args(["/C", exec])
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .creation_flags(0x08000000)
             .spawn()
             .map_err(|e| e.to_string())?;
     }
@@ -116,12 +111,12 @@ fn get_current_platform() -> &'static str {
     if cfg!(windows) { "windows" } else { "linux" }
 }
 
-// ─── Ollama Commands ──────────────────────────────────────────────────────────
+// ─── LM Studio Commands ───────────────────────────────────────────────────────
 
 #[tauri::command]
-async fn get_ollama_catalog(state: State<'_, AppState>) -> Result<Vec<ollama::ModelCatalogEntry>, String> {
+async fn get_ai_models(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     let url = state.config.lock().unwrap().ollama_url.clone();
-    Ok(ollama::catalog_with_status(&url).await)
+    Ok(ollama::list_models(&url).await)
 }
 
 #[tauri::command]
@@ -130,40 +125,9 @@ async fn check_ollama(url: String) -> bool {
 }
 
 #[tauri::command]
-fn pull_ollama_model(
-    model_id: String,
-    state: State<'_, AppState>,
-    app: AppHandle,
-) {
-    let url = state.config.lock().unwrap().ollama_url.clone();
-    let cancel = state.pull_cancel.clone();
-    cancel.store(false, Ordering::SeqCst);
-    let app2 = app.clone();
-    let mid = model_id.clone();
-    let mid2 = model_id.clone();
-    tauri::async_runtime::spawn(async move {
-        let result = ollama::pull_model(&url, &mid, move |status, percent| {
-            let _ = app.emit("ollama-pull-progress", serde_json::json!({
-                "model": mid2,
-                "status": status,
-                "percent": percent,
-            }));
-        }, cancel).await;
-        match result {
-            Ok(()) => { let _ = app2.emit("ollama-pull-done", serde_json::json!({ "model": mid })); }
-            Err(e) => { let _ = app2.emit("ollama-pull-error", serde_json::json!({ "model": mid, "error": e.to_string() })); }
-        }
-    });
-}
-
-#[tauri::command]
-fn cancel_ollama_pull(state: State<'_, AppState>) {
-    state.pull_cancel.store(true, Ordering::SeqCst);
-}
-
-#[tauri::command]
-fn test_tts(text: String) {
-    tts::speak(&text);
+fn test_tts(state: State<'_, AppState>, text: String) {
+    let cfg = state.config.lock().unwrap();
+    tts::speak_with_engine(&text, &cfg.voice_engine, &cfg.voice_custom_cmd);
 }
 
 // ─── Export ───────────────────────────────────────────────────────────────────
@@ -184,7 +148,6 @@ fn export_commands(state: State<'_, AppState>) -> Result<String, String> {
 
 pub fn run() {
     let shared_config: SharedConfig = Arc::new(Mutex::new(PluginConfig::default()));
-    let pull_cancel = Arc::new(AtomicBool::new(false));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -192,11 +155,9 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--background"]),
         ))
-        .manage(AppState { config: shared_config.clone(), pull_cancel: pull_cancel.clone() })
+        .manage(AppState { config: shared_config.clone() })
         .setup(move |app| {
-            // Загружаем сохранённый конфиг
             let saved = load_from_store(app);
-            // --port <num>: easySTT передаёт порт при запуске.
             let args: Vec<String> = std::env::args().collect();
             let port_arg: Option<u16> = args.windows(2)
                 .find(|w| w[0] == "--port")
@@ -205,7 +166,6 @@ pub fn run() {
             sync_autostart(app.handle(), saved.autostart);
             *shared_config.lock().unwrap() = saved;
 
-            // HTTP-сервер
             let cfg_for_server = shared_config.clone();
             let handle_for_server = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -214,7 +174,6 @@ pub fn run() {
                 }
             });
 
-            // Закрытие окна = скрыть, не выходить (HTTP-сервер продолжает работать).
             if let Some(w) = app.get_webview_window("main") {
                 let w_clone = w.clone();
                 w.on_window_event(move |event| {
@@ -225,8 +184,6 @@ pub fn run() {
                 });
             }
 
-            // --background: запущен easySTT'ом → окно скрыто.
-            // Без флага (ручной запуск) → открываем настройки.
             if !std::env::args().any(|a| a == "--background") {
                 show_window(app.handle());
             }
@@ -239,10 +196,8 @@ pub fn run() {
             test_command,
             get_current_platform,
             export_commands,
-            get_ollama_catalog,
+            get_ai_models,
             check_ollama,
-            pull_ollama_model,
-            cancel_ollama_pull,
             test_tts,
         ])
         .run(tauri::generate_context!())

@@ -560,6 +560,15 @@ body {
 .btn-danger:hover { background: #ff6b83; }
 .btn-danger.btn-small { padding: 4px 12px; font-size: 12px; }
 
+/* Icon buttons keep their compact size even with btn-danger */
+.btn-icon.btn-danger {
+  padding: 3px 7px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.btn-icon.btn-danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+
 /* ─── Main tabs (Commands / AI) ───────────────────────────────────────────── */
 .main-tabs {
   display: flex;
@@ -817,3 +826,23 @@ body {
 }
 .tts-test-row .field-input { flex: 1; }
 .tts-test-row .btn-secondary { flex-shrink: 0; white-space: nowrap; }
+
+/* ─── AI misc ─────────────────────────────────────────────────────────────── */
+.ai-no-models {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+select.field-input {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238899aa' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+}
+select.field-input option { background: var(--bg-modal); }

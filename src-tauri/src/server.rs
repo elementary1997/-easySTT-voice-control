@@ -120,8 +120,8 @@ async fn intercept(
         }
     }
 
-    // 3. Ollama NLU — умный fallback когда точное совпадение не сработало
-    if cfg.ollama_enabled && !cfg.ollama_url.is_empty() {
+    // 3. LM Studio NLU — умный fallback когда точное совпадение не сработало
+    if cfg.ollama_enabled && !cfg.ollama_url.is_empty() && !cfg.ollama_model.is_empty() {
         match crate::ollama::nlu_and_respond(
             &cfg.ollama_url,
             &cfg.ollama_model,
@@ -170,7 +170,7 @@ fn maybe_speak(cfg: &crate::config::PluginConfig, custom: Option<&str>) {
     let text = custom
         .map(|s| s.to_string())
         .unwrap_or_else(|| crate::tts::random_response(&cfg.voice_feedback_style));
-    crate::tts::speak(&text);
+    crate::tts::speak_with_engine(&text, &cfg.voice_engine, &cfg.voice_custom_cmd);
 }
 
 /// Ищет точное совпадение и возвращает (trigger, exec_cmd, label) если нашёл.

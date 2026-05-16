@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import "./SettingsPanel.css";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,15 +30,8 @@ interface PluginConfig {
   ollamaModel: string;
   voiceFeedbackEnabled: boolean;
   voiceFeedbackStyle: string;
-}
-
-interface OllamaModel {
-  id: string;
-  displayName: string;
-  sizeMb: number;
-  description: string;
-  recommended: boolean;
-  installed: boolean;
+  voiceEngine: string;
+  voiceCustomCmd: string;
 }
 
 const DEFAULT_CONFIG: PluginConfig = {
@@ -47,10 +39,12 @@ const DEFAULT_CONFIG: PluginConfig = {
   agentName: "Вилли", port: 8790,
   commands: [], categories: [],
   ollamaEnabled: false,
-  ollamaUrl: "http://127.0.0.1:11434",
-  ollamaModel: "llama3.2:1b",
+  ollamaUrl: "http://localhost:1234",
+  ollamaModel: "",
   voiceFeedbackEnabled: false,
   voiceFeedbackStyle: "neutral",
+  voiceEngine: "system",
+  voiceCustomCmd: "",
 };
 
 const EMPTY_COMMAND: Omit<VoiceCommand, "id"> = {
@@ -63,7 +57,6 @@ const EMPTY_COMMAND: Omit<VoiceCommand, "id"> = {
 
 function newId() { return crypto.randomUUID(); }
 function normalizeTrigger(t: string) { return t.toLowerCase().trim().replace(/\s+/g, " "); }
-function fmtMb(mb: number) { return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${mb} MB`; }
 
 // ─── AliasInput ───────────────────────────────────────────────────────────────
 
@@ -204,11 +197,9 @@ export default function SettingsPanel() {
   const importRef = useRef<HTMLInputElement>(null);
 
   // AI tab state
-  const [ollamaOnline, setOllamaOnline] = useState<boolean | null>(null);
-  const [modelCatalog, setModelCatalog] = useState<OllamaModel[]>([]);
+  const [aiOnline, setAiOnline] = useState<boolean | null>(null);
+  const [modelList, setModelList] = useState<string[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
-  const [pullProgress, setPullProgress] = useState<Record<string, number | null>>({});
-  const [pullingModel, setPullingModel] = useState<string | null>(null);
   const [ttsTestText, setTtsTestText] = useState("Привет! Я готов к работе.");
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -218,27 +209,6 @@ export default function SettingsPanel() {
     invoke<string>("get_current_platform").then(p => setPlatform(p === "windows" ? "windows" : "linux"));
   }, []);
 
-  // Ollama pull events
-  useEffect(() => {
-    const u1 = listen<{ model: string; percent: number | null; status: string }>(
-      "ollama-pull-progress", ({ payload }) => {
-        setPullProgress(p => ({ ...p, [payload.model]: payload.percent ?? null }));
-      }
-    );
-    const u2 = listen<{ model: string }>("ollama-pull-done", ({ payload }) => {
-      setPullingModel(null);
-      setPullProgress(p => { const n = { ...p }; delete n[payload.model]; return n; });
-      loadCatalog();
-      showFeedback("Модель загружена!");
-    });
-    const u3 = listen<{ model: string; error: string }>("ollama-pull-error", ({ payload }) => {
-      setPullingModel(null);
-      setPullProgress(p => { const n = { ...p }; delete n[payload.model]; return n; });
-      showFeedback(`Ошибка загрузки: ${payload.error}`);
-    });
-    return () => { u1.then(f => f()); u2.then(f => f()); u3.then(f => f()); };
-  }, []);
-
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   const showFeedback = (msg: string, ms = 3500) => {
@@ -246,14 +216,16 @@ export default function SettingsPanel() {
     setTimeout(() => setFeedback(""), ms);
   };
 
-  const loadCatalog = useCallback(async () => {
+  const loadModels = useCallback(async () => {
     setCatalogLoading(true);
     try {
       const online = await invoke<boolean>("check_ollama", { url: config.ollamaUrl });
-      setOllamaOnline(online);
+      setAiOnline(online);
       if (online) {
-        const catalog = await invoke<OllamaModel[]>("get_ollama_catalog");
-        setModelCatalog(catalog);
+        const models = await invoke<string[]>("get_ai_models");
+        setModelList(models);
+      } else {
+        setModelList([]);
       }
     } finally {
       setCatalogLoading(false);
@@ -261,8 +233,8 @@ export default function SettingsPanel() {
   }, [config.ollamaUrl]);
 
   useEffect(() => {
-    if (mainTab === "ai") loadCatalog();
-  }, [mainTab, loadCatalog]);
+    if (mainTab === "ai") loadModels();
+  }, [mainTab, loadModels]);
 
   // ── Category helpers ──────────────────────────────────────────────────────
 
@@ -363,17 +335,6 @@ export default function SettingsPanel() {
     reader.readAsText(file);
   }, [config.commands]);
 
-  const handlePullModel = useCallback((modelId: string) => {
-    setPullingModel(modelId);
-    setPullProgress(p => ({ ...p, [modelId]: 0 }));
-    invoke("pull_ollama_model", { modelId });
-  }, []);
-
-  const handleCancelPull = useCallback(() => {
-    invoke("cancel_ollama_pull");
-    setPullingModel(null);
-  }, []);
-
   const handleTestTts = useCallback(() => {
     invoke("test_tts", { text: ttsTestText }).catch(e => showFeedback(`TTS ошибка: ${e}`));
   }, [ttsTestText]);
@@ -467,7 +428,7 @@ export default function SettingsPanel() {
             )}
             {addingCat ? (
               <div className="cat-tab-add">
-                <input ref={() => {}} className="cat-tab-input" placeholder="Название..." value={newCatInput} autoFocus
+                <input className="cat-tab-input" placeholder="Название..." value={newCatInput} autoFocus
                   onChange={e => setNewCatInput(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter") handleAddCategory(); if (e.key === "Escape") { setAddingCat(false); setNewCatInput(""); } }}
                   onBlur={handleAddCategory} />
@@ -504,11 +465,11 @@ export default function SettingsPanel() {
       {mainTab === "ai" && (
         <section className="section section--grow ai-section">
 
-          {/* Ollama toggle */}
+          {/* LM Studio NLU */}
           <div className="ai-block">
             <div className="ai-block-header">
               <div>
-                <h2 className="section-title" style={{ marginBottom: 2 }}>Ollama NLU</h2>
+                <h2 className="section-title" style={{ marginBottom: 2 }}>LM Studio NLU</h2>
                 <span className="field-hint">Умное распознавание команд через локальную модель</span>
               </div>
               <label className="toggle-row">
@@ -521,70 +482,44 @@ export default function SettingsPanel() {
             {config.ollamaEnabled && <>
               <div className="ai-url-row">
                 <div className="field-group" style={{ flex: 1 }}>
-                  <label className="field-label">URL Ollama</label>
+                  <label className="field-label">URL сервера</label>
                   <input className="field-input monospace" value={config.ollamaUrl}
                     onChange={e => setConfig(c => ({ ...c, ollamaUrl: e.target.value }))} />
                 </div>
-                <button className="btn-secondary btn-small ai-check-btn" onClick={loadCatalog} disabled={catalogLoading}>
+                <button className="btn-secondary btn-small ai-check-btn" onClick={loadModels} disabled={catalogLoading}>
                   {catalogLoading ? "Проверяю..." : "Проверить"}
                 </button>
               </div>
 
-              {/* Ollama status */}
-              {ollamaOnline !== null && (
-                <div className={`ollama-status ${ollamaOnline ? "ollama-status--online" : "ollama-status--offline"}`}>
-                  {ollamaOnline ? "● Ollama запущена" : "● Ollama недоступна — запустите: ollama serve"}
+              {aiOnline !== null && (
+                <div className={`ollama-status ${aiOnline ? "ollama-status--online" : "ollama-status--offline"}`}>
+                  {aiOnline
+                    ? `● Сервер доступен${modelList.length > 0 ? ` · ${modelList.length} мод.` : ""}`
+                    : "● Сервер недоступен — запустите LM Studio и включите Local Server"}
                 </div>
               )}
 
-              {/* Model catalog */}
-              {ollamaOnline && (
+              {aiOnline && (
                 <>
                   <label className="field-label" style={{ marginTop: 10 }}>Модель</label>
-                  <div className="model-catalog">
-                    {modelCatalog.map(m => {
-                      const isSelected = config.ollamaModel === m.id;
-                      const isPulling = pullingModel === m.id;
-                      const progress = pullProgress[m.id];
-                      return (
-                        <div key={m.id} className={`model-card ${isSelected ? "model-card--selected" : ""}`}
-                          onClick={() => !isPulling && setConfig(c => ({ ...c, ollamaModel: m.id }))}>
-                          <div className="model-card-top">
-                            <div className="model-card-info">
-                              <span className="model-card-name">{m.displayName}</span>
-                              {m.recommended && <span className="model-badge">Рекомендуется</span>}
-                              <span className="model-card-size">{fmtMb(m.sizeMb)}</span>
-                            </div>
-                            <div className="model-card-action">
-                              {m.installed ? (
-                                isSelected
-                                  ? <span className="model-selected-mark">✓ Выбрана</span>
-                                  : <span className="model-installed-mark">Установлена</span>
-                              ) : isPulling ? (
-                                <button className="btn-danger btn-small" onClick={e => { e.stopPropagation(); handleCancelPull(); }}>
-                                  Отмена
-                                </button>
-                              ) : (
-                                <button className="btn-primary btn-small" onClick={e => { e.stopPropagation(); handlePullModel(m.id); }}>
-                                  Скачать
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <p className="model-card-desc">{m.description}</p>
-                          {isPulling && (
-                            <div className="model-progress-wrap">
-                              <div className="model-progress-bar"
-                                style={{ width: `${progress ?? 0}%` }} />
-                              <span className="model-progress-label">
-                                {progress != null ? `${Math.round(progress)}%` : "Подключаюсь..."}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  {modelList.length > 0 ? (
+                    <select className="field-input" value={config.ollamaModel}
+                      onChange={e => setConfig(c => ({ ...c, ollamaModel: e.target.value }))}>
+                      <option value="">— выберите модель —</option>
+                      {modelList.map(m => (
+                        <option key={m} value={m} title={m}>
+                          {m.length > 60 ? `…${m.slice(-58)}` : m}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="ai-no-models">Нет загруженных моделей. Загрузите модель в LM Studio.</p>
+                  )}
+                  {config.ollamaModel && (
+                    <span className="field-hint" style={{ marginTop: 2 }}>
+                      Активная: <em>{config.ollamaModel}</em>
+                    </span>
+                  )}
                 </>
               )}
             </>}
@@ -622,15 +557,42 @@ export default function SettingsPanel() {
                   </label>
                 </div>
 
-                <label className="field-label" style={{ marginTop: 10 }}>Тест TTS</label>
+                <label className="field-label" style={{ marginTop: 12 }}>Голосовой движок</label>
+                <div className="style-selector">
+                  <label className={`style-option ${config.voiceEngine === "system" ? "style-option--active" : ""}`}>
+                    <input type="radio" name="engine" value="system" checked={config.voiceEngine === "system"}
+                      onChange={() => setConfig(c => ({ ...c, voiceEngine: "system" }))} />
+                    <span className="style-label">Системный</span>
+                    <span className="style-example">SAPI / espeak-ng</span>
+                  </label>
+                  <label className={`style-option ${config.voiceEngine === "custom" ? "style-option--active" : ""}`}>
+                    <input type="radio" name="engine" value="custom" checked={config.voiceEngine === "custom"}
+                      onChange={() => setConfig(c => ({ ...c, voiceEngine: "custom" }))} />
+                    <span className="style-label">Свой движок</span>
+                    <span className="style-example">произвольная команда</span>
+                  </label>
+                </div>
+
+                {config.voiceEngine === "custom" && (
+                  <>
+                    <label className="field-label" style={{ marginTop: 8 }}>
+                      Команда <span className="hint">(<em>{"{text}"}</em> будет заменён на текст)</span>
+                    </label>
+                    <input className="field-input monospace" placeholder='say "{text}"'
+                      value={config.voiceCustomCmd}
+                      onChange={e => setConfig(c => ({ ...c, voiceCustomCmd: e.target.value }))} />
+                    <span className="field-hint" style={{ marginTop: 2 }}>
+                      Пример Windows: <em>PowerShell -c "Add-Type -A System.Speech; ...</em>
+                    </span>
+                  </>
+                )}
+
+                <label className="field-label" style={{ marginTop: 12 }}>Тест TTS</label>
                 <div className="tts-test-row">
                   <input className="field-input" value={ttsTestText}
                     onChange={e => setTtsTestText(e.target.value)} placeholder="Текст для теста..." />
                   <button className="btn-secondary btn-small" onClick={handleTestTts}>▶ Произнести</button>
                 </div>
-                <span className="field-hint" style={{ marginTop: 4 }}>
-                  Windows: SAPI (системный голос) · Linux: espeak-ng
-                </span>
               </>
             )}
           </div>
