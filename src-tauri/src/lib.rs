@@ -1,11 +1,16 @@
 mod config;
+mod ollama;
 mod server;
+mod tts;
 
 use config::PluginConfig;
 use server::SharedConfig;
 
-use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, State};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_store::StoreExt;
 
@@ -14,6 +19,7 @@ const STORE_KEY: &str = "config";
 
 pub struct AppState {
     pub config: SharedConfig,
+    pub pull_cancel: Arc<AtomicBool>,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -110,6 +116,57 @@ fn get_current_platform() -> &'static str {
     if cfg!(windows) { "windows" } else { "linux" }
 }
 
+// ─── Ollama Commands ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn get_ollama_catalog(state: State<'_, AppState>) -> Vec<ollama::ModelCatalogEntry> {
+    let url = state.config.lock().unwrap().ollama_url.clone();
+    ollama::catalog_with_status(&url).await
+}
+
+#[tauri::command]
+async fn check_ollama(url: String) -> bool {
+    ollama::is_ollama_running(&url).await
+}
+
+#[tauri::command]
+fn pull_ollama_model(
+    model_id: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) {
+    let url = state.config.lock().unwrap().ollama_url.clone();
+    let cancel = state.pull_cancel.clone();
+    cancel.store(false, Ordering::SeqCst);
+    let app2 = app.clone();
+    let mid = model_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let result = ollama::pull_model(&url, &model_id, move |status, percent| {
+            let _ = app.emit("ollama-pull-progress", serde_json::json!({
+                "model": model_id,
+                "status": status,
+                "percent": percent,
+            }));
+        }, cancel).await;
+        match result {
+            Ok(()) => { let _ = app2.emit("ollama-pull-done", serde_json::json!({ "model": mid })); }
+            Err(e) => { let _ = app2.emit("ollama-pull-error", serde_json::json!({ "model": mid, "error": e.to_string() })); }
+        }
+    });
+}
+
+#[tauri::command]
+fn cancel_ollama_pull(state: State<'_, AppState>) {
+    state.pull_cancel.store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
+fn test_tts(text: String) {
+    tts::speak(&text);
+}
+
+// ─── Export ───────────────────────────────────────────────────────────────────
+
 #[tauri::command]
 fn export_commands(state: State<'_, AppState>) -> Result<String, String> {
     let commands = state.config.lock().unwrap().commands.clone();
@@ -126,6 +183,7 @@ fn export_commands(state: State<'_, AppState>) -> Result<String, String> {
 
 pub fn run() {
     let shared_config: SharedConfig = Arc::new(Mutex::new(PluginConfig::default()));
+    let pull_cancel = Arc::new(AtomicBool::new(false));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -133,7 +191,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--background"]),
         ))
-        .manage(AppState { config: shared_config.clone() })
+        .manage(AppState { config: shared_config.clone(), pull_cancel: pull_cancel.clone() })
         .setup(move |app| {
             // Загружаем сохранённый конфиг
             let saved = load_from_store(app);
@@ -180,6 +238,11 @@ pub fn run() {
             test_command,
             get_current_platform,
             export_commands,
+            get_ollama_catalog,
+            check_ollama,
+            pull_ollama_model,
+            cancel_ollama_pull,
+            test_tts,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска easySTT Voice Control");

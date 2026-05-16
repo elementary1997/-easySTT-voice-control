@@ -25,6 +25,9 @@ pub struct VoiceCommand {
 }
 
 fn default_true() -> bool { true }
+fn default_ollama_url() -> String { "http://127.0.0.1:11434".to_string() }
+fn default_ollama_model() -> String { "llama3.2:1b".to_string() }
+fn default_voice_style() -> String { "neutral".to_string() }
 
 fn default_categories() -> Vec<String> {
     vec![
@@ -47,6 +50,23 @@ pub struct PluginConfig {
     pub commands: Vec<VoiceCommand>,
     #[serde(default = "default_categories")]
     pub categories: Vec<String>,
+
+    // ── Ollama / NLU ──────────────────────────────────────────────────────────
+    /// Включить Ollama для умного распознавания команд.
+    #[serde(default)]
+    pub ollama_enabled: bool,
+    #[serde(default = "default_ollama_url")]
+    pub ollama_url: String,
+    /// ID модели Ollama (напр. "llama3.2:1b").
+    #[serde(default = "default_ollama_model")]
+    pub ollama_model: String,
+
+    // ── TTS / Голосовой ответ ─────────────────────────────────────────────────
+    #[serde(default)]
+    pub voice_feedback_enabled: bool,
+    /// "neutral" | "fun"
+    #[serde(default = "default_voice_style")]
+    pub voice_feedback_style: String,
 }
 
 impl Default for PluginConfig {
@@ -57,6 +77,11 @@ impl Default for PluginConfig {
             agent_name: "Вилли".to_string(),
             port: 8790,
             categories: default_categories(),
+            ollama_enabled: false,
+            ollama_url: default_ollama_url(),
+            ollama_model: default_ollama_model(),
+            voice_feedback_enabled: false,
+            voice_feedback_style: default_voice_style(),
             commands: vec![
                 VoiceCommand {
                     id: "1".to_string(),

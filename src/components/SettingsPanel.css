@@ -544,3 +544,276 @@ body {
   min-width: 120px;
   flex: 1;
 }
+
+/* ─── Danger button ───────────────────────────────────────────────────────── */
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-danger:hover { background: #ff6b83; }
+.btn-danger.btn-small { padding: 4px 12px; font-size: 12px; }
+
+/* ─── Main tabs (Commands / AI) ───────────────────────────────────────────── */
+.main-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 20px;
+  background: var(--bg-section);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.main-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color .12s, border-color .12s;
+}
+.main-tab:hover:not(.main-tab--active) { color: var(--text); }
+.main-tab--active { color: var(--text); border-bottom-color: var(--accent); }
+
+.main-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+
+/* ─── AI section ──────────────────────────────────────────────────────────── */
+.ai-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.ai-section::-webkit-scrollbar { width: 3px; }
+.ai-section::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.ai-section::-webkit-scrollbar-track { background: transparent; }
+
+.ai-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.ai-block:last-child { border-bottom: none; }
+
+.ai-block-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ai-url-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.ai-check-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ─── Ollama status ───────────────────────────────────────────────────────── */
+.ollama-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+}
+.ollama-status--online {
+  color: var(--green);
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+}
+.ollama-status--offline {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+}
+
+/* ─── Model catalog ───────────────────────────────────────────────────────── */
+.model-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-row);
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.model-card:hover { background: #1e2a40; border-color: #3a4a68; }
+.model-card--selected {
+  border-color: var(--accent);
+  background: rgba(76, 132, 255, 0.08);
+}
+
+.model-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.model-card-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.model-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.model-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(76, 132, 255, 0.18);
+  border: 1px solid rgba(76, 132, 255, 0.35);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.model-card-size {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.model-card-action {
+  flex-shrink: 0;
+}
+
+.model-card-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.model-selected-mark {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green);
+}
+.model-installed-mark {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.model-progress-wrap {
+  position: relative;
+  height: 16px;
+  background: var(--bg-section);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-top: 4px;
+}
+.model-progress-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: var(--accent);
+  border-radius: 8px;
+  transition: width .3s ease;
+}
+.model-progress-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 0 4px rgba(0,0,0,.6);
+}
+
+/* ─── Style selector (TTS personality) ───────────────────────────────────── */
+.style-selector {
+  display: flex;
+  gap: 8px;
+}
+
+.style-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-row);
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.style-option input[type="radio"] { display: none; }
+.style-option:hover { background: #1e2a40; }
+.style-option--active {
+  border-color: var(--accent);
+  background: rgba(76, 132, 255, 0.08);
+}
+
+.style-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.style-option--active .style-label { color: var(--accent); }
+
+.style-example {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ─── TTS test row ────────────────────────────────────────────────────────── */
+.tts-test-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.tts-test-row .field-input { flex: 1; }
+.tts-test-row .btn-secondary { flex-shrink: 0; white-space: nowrap; }

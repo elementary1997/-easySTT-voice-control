@@ -66,18 +66,23 @@ async fn intercept(
         }
     };
 
-    // 1. Ищем одиночную команду (точное совпадение)
-    if let Some(resp) = try_match_single(&command_text, &cfg) {
-        return resp;
+    // 1. Точное совпадение
+    if let Some((trigger, exec_cmd, label)) = find_exact_match(&command_text, &cfg) {
+        execute_shell(&exec_cmd);
+        maybe_speak(&cfg, None);
+        return (StatusCode::OK, Json(InterceptResponse {
+            intercept: true, agent_detected: true,
+            matched_trigger: Some(trigger),
+            feedback: Some(format!("Выполняю: {label}")),
+        }));
     }
 
-    // 2. Пробуем последовательное выполнение: «открой браузер и открой калькулятор»
+    // 2. Последовательное выполнение: «открой браузер и открой калькулятор»
     let parts = split_conjunctions(&command_text);
     if parts.len() > 1 {
         let mut executed: Vec<String> = Vec::new();
         'parts: for part in &parts {
             for cmd in &cfg.commands {
-                // Открыть
                 let trigger = normalize(&cmd.trigger);
                 if matches_trigger(part, &trigger)
                     || cmd.aliases.iter().any(|a| matches_trigger(part, &normalize(a)))
@@ -89,7 +94,6 @@ async fn intercept(
                     }
                     continue 'parts;
                 }
-                // Закрыть
                 if !cmd.close_trigger.is_empty() {
                     let ct = normalize(&cmd.close_trigger);
                     if matches_trigger(part, &ct)
@@ -107,65 +111,96 @@ async fn intercept(
             }
         }
         if !executed.is_empty() {
+            maybe_speak(&cfg, None);
             return (StatusCode::OK, Json(InterceptResponse {
-                intercept: true,
-                agent_detected: true,
+                intercept: true, agent_detected: true,
                 matched_trigger: None,
                 feedback: Some(format!("Выполняю: {}", executed.join(" → "))),
             }));
         }
     }
 
-    // Имя агента найдено, команда не распознана — wake-word сигнал для easySTT
-    (
-        StatusCode::OK,
-        Json(InterceptResponse { intercept: false, agent_detected: true, matched_trigger: None, feedback: None }),
-    )
+    // 3. Ollama NLU — умный fallback когда точное совпадение не сработало
+    if cfg.ollama_enabled && !cfg.ollama_url.is_empty() {
+        match crate::ollama::nlu_and_respond(
+            &cfg.ollama_url,
+            &cfg.ollama_model,
+            &cfg.agent_name,
+            &cfg.commands,
+            &command_text,
+            &cfg.voice_feedback_style,
+        )
+        .await
+        {
+            Ok(nlu) => {
+                if let Some(cmd_id) = nlu.command_id {
+                    if let Some(cmd) = cfg.commands.iter().find(|c| c.id == cmd_id) {
+                        let exec_cmd = if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd };
+                        if !exec_cmd.is_empty() {
+                            execute_shell(exec_cmd);
+                            maybe_speak(&cfg, nlu.response_text.as_deref());
+                            return (StatusCode::OK, Json(InterceptResponse {
+                                intercept: true, agent_detected: true,
+                                matched_trigger: Some(cmd.trigger.clone()),
+                                feedback: Some(format!("AI: {}", cmd.description)),
+                            }));
+                        }
+                    }
+                }
+                // NLU не распознал команду — но агент был обнаружен
+            }
+            Err(e) => {
+                eprintln!("[voice-control] Ollama NLU error: {e}");
+            }
+        }
+    }
+
+    // Агент обнаружен, команда не распознана → wake-word для easySTT
+    (StatusCode::OK, Json(InterceptResponse {
+        intercept: false, agent_detected: true, matched_trigger: None, feedback: None,
+    }))
 }
 
-fn try_match_single(command_text: &str, cfg: &crate::config::PluginConfig) -> Option<(StatusCode, Json<InterceptResponse>)> {
+/// Воспроизводит голосовой ответ если включён voice_feedback.
+/// `custom` — текст от Ollama; None → рандомная фраза из пула.
+fn maybe_speak(cfg: &crate::config::PluginConfig, custom: Option<&str>) {
+    if !cfg.voice_feedback_enabled {
+        return;
+    }
+    let text = custom
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| crate::tts::random_response(&cfg.voice_feedback_style));
+    crate::tts::speak(&text);
+}
+
+/// Ищет точное совпадение и возвращает (trigger, exec_cmd, label) если нашёл.
+fn find_exact_match(
+    command_text: &str,
+    cfg: &crate::config::PluginConfig,
+) -> Option<(String, String, String)> {
     for cmd in &cfg.commands {
-        // Открыть
         let trigger = normalize(&cmd.trigger);
         if matches_trigger(command_text, &trigger)
             || cmd.aliases.iter().any(|a| matches_trigger(command_text, &normalize(a)))
         {
-            let exec_cmd = if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd };
-            let feedback = if exec_cmd.is_empty() {
-                format!("Команда «{}» не задана для этой платформы", cmd.trigger)
-            } else {
-                execute_shell(exec_cmd);
-                format!("Выполняю: {}", if cmd.description.is_empty() { &cmd.trigger } else { &cmd.description })
-            };
-            return Some((StatusCode::OK, Json(InterceptResponse {
-                intercept: true, agent_detected: true,
-                matched_trigger: Some(cmd.trigger.clone()),
-                feedback: Some(feedback),
-            })));
+            let exec = if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd };
+            let label = if cmd.description.is_empty() { &cmd.trigger } else { &cmd.description };
+            return Some((cmd.trigger.clone(), exec.clone(), label.clone()));
         }
-        // Закрыть (если задано)
         if !cmd.close_trigger.is_empty() {
             let ct = normalize(&cmd.close_trigger);
             if matches_trigger(command_text, &ct)
                 || cmd.close_aliases.iter().any(|a| matches_trigger(command_text, &normalize(a)))
             {
-                let exec_cmd = if cfg!(windows) { &cmd.windows_close_cmd } else { &cmd.linux_close_cmd };
-                let feedback = if exec_cmd.is_empty() {
-                    format!("Команда закрытия «{}» не задана для этой платформы", cmd.close_trigger)
-                } else {
-                    execute_shell(exec_cmd);
-                    format!("Закрываю: {}", if cmd.description.is_empty() { &cmd.close_trigger } else { &cmd.description })
-                };
-                return Some((StatusCode::OK, Json(InterceptResponse {
-                    intercept: true, agent_detected: true,
-                    matched_trigger: Some(cmd.close_trigger.clone()),
-                    feedback: Some(feedback),
-                })));
+                let exec = if cfg!(windows) { &cmd.windows_close_cmd } else { &cmd.linux_close_cmd };
+                let label = if cmd.description.is_empty() { &cmd.close_trigger } else { &cmd.description };
+                return Some((cmd.close_trigger.clone(), exec.clone(), label.clone()));
             }
         }
     }
     None
 }
+
 
 /// Разбивает текст по союзам-разделителям для последовательного выполнения команд.
 fn split_conjunctions(text: &str) -> Vec<String> {
