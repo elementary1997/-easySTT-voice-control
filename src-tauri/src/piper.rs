@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-const PIPER_VERSION: &str = "1.2.0";
+const PIPER_VERSION: &str = "2023.11.14-2";
 const VOICES_BASE: &str =
     "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0";
 
@@ -161,7 +161,7 @@ pub async fn download_binary(
     let url_suffix = "piper_linux_x86_64.tar.gz";
 
     let url = format!(
-        "https://github.com/rhasspy/piper/releases/download/v{PIPER_VERSION}/{url_suffix}"
+        "https://github.com/rhasspy/piper/releases/download/{PIPER_VERSION}/{url_suffix}"
     );
     let archive_path = base.join(archive_name);
 
