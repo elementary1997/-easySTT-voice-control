@@ -100,12 +100,12 @@ body {
 .section-actions { display: flex; align-items: center; gap: 8px; }
 
 .os-badge {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   background: var(--bg-row);
   border: 1px solid var(--border);
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
 }
 
 /* ─── Fields ──────────────────────────────────────────────────────────────── */
@@ -147,12 +147,15 @@ body {
   align-items: center;
   gap: 4px;
   overflow-x: auto;
-  scrollbar-width: none;
-  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  padding-bottom: 6px;
   margin-bottom: 4px;
   flex-shrink: 0;
 }
-.cat-tabs::-webkit-scrollbar { display: none; }
+.cat-tabs::-webkit-scrollbar { height: 3px; }
+.cat-tabs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.cat-tabs::-webkit-scrollbar-track { background: transparent; }
 
 .cat-tab {
   display: inline-flex;
