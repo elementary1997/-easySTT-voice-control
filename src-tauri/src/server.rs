@@ -273,6 +273,20 @@ async fn open_settings(State(state): State<ServerState>) -> impl IntoResponse {
     (StatusCode::OK, Json(json!({ "ok": true })))
 }
 
+/// Удаляет сохранённый конфиг плагина и завершает процесс.
+/// Вызывается easySTT при удалении плагина из списка.
+async fn reset_config(State(state): State<ServerState>) -> impl IntoResponse {
+    use tauri::Manager;
+    if let Ok(config_dir) = state.app_handle.path().app_config_dir() {
+        let _ = std::fs::remove_file(config_dir.join("voice_control.json"));
+    }
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::process::exit(0);
+    });
+    (StatusCode::OK, Json(json!({ "ok": true })))
+}
+
 pub fn build_router(config: SharedConfig, port: u16, app_handle: AppHandle) -> Router {
     let state = ServerState { config, port, app_handle };
     Router::new()
@@ -280,6 +294,7 @@ pub fn build_router(config: SharedConfig, port: u16, app_handle: AppHandle) -> R
         .route("/plugin-manifest", get(plugin_manifest))
         .route("/intercept", post(intercept))
         .route("/open-settings", post(open_settings))
+        .route("/reset", post(reset_config))
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(state)
 }
