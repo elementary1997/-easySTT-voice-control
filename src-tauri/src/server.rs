@@ -146,6 +146,9 @@ async fn intercept(
 
         state.emit_log("debug", format!("🤖 NLU [{model}] «{text2}»", model = cfg.ollama_model));
 
+        // Instant acknowledgment — speak before LLM responds (respects voice_feedback_enabled)
+        maybe_speak(&cfg, Some("Думаю..."));
+
         tokio::spawn(async move {
             let log3 = log2.clone();
             let app3 = app2.clone();
@@ -203,11 +206,9 @@ async fn intercept(
 
                     if let Some(ref text) = nlu.response_text {
                         emit2("info", &format!("💬 Ответ: {text}"));
-                        if nlu.must_speak {
-                            crate::tts::speak_with_engine(text, &cfg2.voice_engine, &cfg2.piper_voice, &cfg2.edge_tts_voice, cfg2.edge_tts_rate, &cfg2.voice_custom_cmd);
-                        } else {
-                            maybe_speak(&cfg2, Some(text.as_str()));
-                        }
+                        // must_speak means LLM has an informational response to deliver,
+                        // but voice_feedback_enabled still controls whether we speak at all.
+                        maybe_speak(&cfg2, Some(text.as_str()));
                     } else if nlu.trigger.is_some() {
                         maybe_speak(&cfg2, None);
                     }
@@ -305,7 +306,13 @@ fn matches_trigger(text: &str, trigger: &str) -> bool {
     if text == trigger || text.contains(trigger) { return true; }
     let trigger_words: Vec<&str> = trigger.split_whitespace().collect();
     let text_words: Vec<&str> = text.split_whitespace().collect();
-    !trigger_words.is_empty() && trigger_words.iter().all(|tw| text_words.contains(tw))
+    if trigger_words.is_empty() { return false; }
+    let matched = trigger_words.iter().filter(|tw| text_words.contains(tw)).count();
+    // Single-word trigger: must be exact (already handled above via contains).
+    // Multi-word trigger: 80% of words must be present — catches Whisper mis-transcriptions.
+    let required = if trigger_words.len() == 1 { 1 }
+        else { ((trigger_words.len() as f32 * 0.8).ceil() as usize).max(1) };
+    matched >= required
 }
 
 fn execute_shell(cmd: &str) {
