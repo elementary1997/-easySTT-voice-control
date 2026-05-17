@@ -286,15 +286,10 @@ pub fn run() {
 
             let cfg_for_server = shared_config.clone();
             let log_for_server = shared_log.clone();
-            let log_for_err = shared_log.clone();
             let handle_for_server = app.handle().clone();
-            let handle_for_err = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = server::serve(cfg_for_server, log_for_server, port, handle_for_server).await {
                     eprintln!("[voice-control] Ошибка сервера: {e}");
-                    let entry = crate::logger::push(&log_for_err, "error",
-                        format!("❌ HTTP-сервер не запустился на порту {port}: {e} (порт уже занят?)"));
-                    let _ = handle_for_err.emit("vc-log", entry);
                 }
             });
 
