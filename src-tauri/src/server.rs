@@ -139,6 +139,7 @@ async fn intercept(
             .await
             {
                 Ok(nlu) => {
+                    // Выполняем зарегистрированную команду если LLM вернул триггер
                     if let Some(ref trig) = nlu.trigger {
                         let norm = normalize(trig);
                         let found = cfg2.commands.iter().find(|c| {
@@ -156,11 +157,19 @@ async fn intercept(
                             } else {
                                 if cfg!(windows) { &cmd.windows_cmd } else { &cmd.linux_cmd }
                             };
-                            if !exec_cmd.is_empty() {
-                                execute_shell(exec_cmd);
-                                maybe_speak(&cfg2, nlu.response_text.as_deref());
-                            }
+                            if !exec_cmd.is_empty() { execute_shell(exec_cmd); }
                         }
+                    }
+                    // must_speak = информационный запрос → всегда озвучиваем
+                    // иначе → только если включён voice_feedback
+                    if let Some(ref text) = nlu.response_text {
+                        if nlu.must_speak {
+                            crate::tts::speak_with_engine(text, &cfg2.voice_engine, &cfg2.piper_voice, &cfg2.edge_tts_voice, cfg2.edge_tts_rate, &cfg2.voice_custom_cmd);
+                        } else {
+                            maybe_speak(&cfg2, Some(text.as_str()));
+                        }
+                    } else if nlu.trigger.is_some() {
+                        maybe_speak(&cfg2, None);
                     }
                 }
                 Err(e) => {

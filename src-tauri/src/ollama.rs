@@ -1,57 +1,240 @@
 use std::time::Duration;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
-// ─── Status + model list (OpenAI-compatible API — LM Studio) ─────────────────
+// ─── Status + model list ──────────────────────────────────────────────────────
 
 pub async fn is_ollama_running(url: &str) -> bool {
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-    else {
+    let Ok(client) = reqwest::Client::builder().timeout(Duration::from_secs(2)).build() else {
         return false;
     };
-    client
-        .get(format!("{}/v1/models", url.trim_end_matches('/')))
-        .send()
-        .await
-        .is_ok()
+    client.get(format!("{}/v1/models", url.trim_end_matches('/'))).send().await.is_ok()
 }
 
-/// Возвращает список ID моделей доступных в LM Studio.
 pub async fn list_models(url: &str) -> Vec<String> {
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-    else {
+    let Ok(client) = reqwest::Client::builder().timeout(Duration::from_secs(3)).build() else {
         return vec![];
     };
-    let Ok(resp) = client
-        .get(format!("{}/v1/models", url.trim_end_matches('/')))
-        .send()
-        .await
-    else {
+    let Ok(resp) = client.get(format!("{}/v1/models", url.trim_end_matches('/'))).send().await else {
         return vec![];
     };
-    let Ok(json) = resp.json::<serde_json::Value>().await else {
-        return vec![];
-    };
-    json["data"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|m| m["id"].as_str().map(|s| s.to_string()))
-                .collect()
-        })
+    let Ok(json) = resp.json::<Value>().await else { return vec![]; };
+    json["data"].as_array()
+        .map(|arr| arr.iter().filter_map(|m| m["id"].as_str().map(|s| s.to_string())).collect())
         .unwrap_or_default()
 }
 
-// ─── NLU + response generation ────────────────────────────────────────────────
+// ─── OpenAI API types ─────────────────────────────────────────────────────────
 
-pub struct NluResult {
-    pub trigger: Option<String>,
-    pub response_text: Option<String>,
+#[derive(Deserialize)]
+struct ChatResponse {
+    choices: Vec<Choice>,
 }
 
-/// Один вызов к OpenAI-compatible API: классификация + генерация ответа.
+#[derive(Deserialize)]
+struct Choice {
+    message: AssistantMessage,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+struct AssistantMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<ToolCall>>,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+struct ToolCall {
+    id: String,
+    function: ToolCallFn,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+struct ToolCallFn {
+    name: String,
+    arguments: String,
+}
+
+// ─── NluResult ────────────────────────────────────────────────────────────────
+
+pub struct NluResult {
+    /// Триггер зарегистрированной команды для выполнения в server.rs.
+    pub trigger: Option<String>,
+    /// Текст для озвучивания.
+    pub response_text: Option<String>,
+    /// true = озвучить даже если voice_feedback выключен (информационный ответ).
+    pub must_speak: bool,
+}
+
+// ─── Tool definitions ─────────────────────────────────────────────────────────
+
+fn tool_definitions(commands: &[crate::config::VoiceCommand]) -> Value {
+    let mut all_triggers: Vec<String> = commands.iter().map(|c| c.trigger.clone()).collect();
+    for c in commands {
+        if !c.close_trigger.is_empty() {
+            all_triggers.push(c.close_trigger.clone());
+        }
+    }
+
+    json!([
+        {
+            "type": "function",
+            "function": {
+                "name": "run_command",
+                "description": "Выполнить зарегистрированную голосовую команду. Используй когда пользователь хочет открыть/закрыть приложение или выполнить настроенное действие.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "trigger": {
+                            "type": "string",
+                            "description": format!("Точная триггерная фраза из списка: {}", all_triggers.join("; "))
+                        }
+                    },
+                    "required": ["trigger"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "shell_query",
+                "description": "Выполнить команду в терминале и вернуть вывод. Используй для информационных запросов: что жрёт память/CPU, состояние диска, запущенные процессы, Docker контейнеры, сетевые соединения, логи и т.д.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": if cfg!(windows) {
+                                "PowerShell команда. Примеры: 'Get-Process | Sort WS -Desc | Select -First 5 Name,@{N=\"MB\";E={[int]($_.WS/1MB)}}'"
+                            } else {
+                                "Bash команда. Примеры: 'ps aux --sort=-%mem | head -6', 'df -h', 'docker ps'"
+                            }
+                        }
+                    },
+                    "required": ["command"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "kill_process",
+                "description": "Завершить/убить процесс по имени. Используй когда пользователь хочет закрыть программу которой нет в списке зарегистрированных команд.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Имя процесса (например: chrome, firefox, notepad, Code)"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "open_url",
+                "description": "Открыть URL в браузере по умолчанию.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": { "type": "string", "description": "Полный URL включая https://" }
+                    },
+                    "required": ["url"]
+                }
+            }
+        }
+    ])
+}
+
+// ─── Tool execution ───────────────────────────────────────────────────────────
+
+fn exec_tool(name: &str, args: &Value) -> String {
+    match name {
+        "shell_query" => {
+            let cmd = args["command"].as_str().unwrap_or("echo пусто");
+            shell_capture(cmd)
+        }
+        "kill_process" => {
+            let pname = args["name"].as_str().unwrap_or("");
+            kill_proc(pname)
+        }
+        "open_url" => {
+            let url = args["url"].as_str().unwrap_or("");
+            if !url.is_empty() { open_url(url); }
+            format!("Открываю {url}")
+        }
+        _ => "Неизвестный инструмент".to_string(),
+    }
+}
+
+fn shell_capture(cmd: &str) -> String {
+    #[cfg(windows)]
+    let result = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", cmd])
+        .output();
+    #[cfg(not(windows))]
+    let result = std::process::Command::new("sh").args(["-c", cmd]).output();
+
+    match result {
+        Ok(out) => {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if s.is_empty() {
+                let e = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                if e.is_empty() { "Нет вывода".to_string() } else { e }
+            } else {
+                // Ограничиваем вывод чтобы не перегружать LLM
+                if s.len() > 2000 { format!("{}…(обрезано)", &s[..2000]) } else { s }
+            }
+        }
+        Err(e) => format!("Ошибка: {e}"),
+    }
+}
+
+fn kill_proc(name: &str) -> String {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let exe = if name.ends_with(".exe") { name.to_string() } else { format!("{name}.exe") };
+        match std::process::Command::new("taskkill")
+            .args(["/f", "/im", &exe])
+            .creation_flags(0x08000000)
+            .output()
+        {
+            Ok(o) => {
+                let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if s.is_empty() { format!("Процесс {name} завершён") } else { s }
+            }
+            Err(e) => format!("Ошибка: {e}"),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        match std::process::Command::new("pkill").arg(name).output() {
+            Ok(_) => format!("Процесс {name} завершён"),
+            Err(e) => format!("Ошибка: {e}"),
+        }
+    }
+}
+
+fn open_url(url: &str) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("cmd")
+            .args(["/c", "start", "", url])
+            .creation_flags(0x08000000)
+            .spawn();
+    }
+    #[cfg(not(windows))]
+    { let _ = std::process::Command::new("xdg-open").arg(url).spawn(); }
+}
+
+// ─── Main NLU entry point ─────────────────────────────────────────────────────
+
 pub async fn nlu_and_respond(
     url: &str,
     model_id: &str,
@@ -61,95 +244,123 @@ pub async fn nlu_and_respond(
     style: &str,
 ) -> anyhow::Result<NluResult> {
     if model_id.is_empty() {
-        return Ok(NluResult { trigger: None, response_text: None });
+        return Ok(NluResult { trigger: None, response_text: None, must_speak: false });
     }
 
     let endpoint = format!("{}/v1/chat/completions", url.trim_end_matches('/'));
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(90)).build()?;
 
-    let commands_list: Vec<String> = commands
-        .iter()
-        .map(|c| {
-            let mut line = format!("- \"{}\"", c.trigger);
-            if !c.description.is_empty() {
-                line.push_str(&format!(" ({})", c.description));
-            }
-            if !c.close_trigger.is_empty() {
-                line.push_str(&format!(" | закрыть: \"{}\"", c.close_trigger));
-            }
-            for alias in &c.aliases {
-                if !alias.is_empty() {
-                    line.push_str(&format!(" | alias: \"{}\"", alias));
-                }
-            }
-            line
-        })
-        .collect();
+    let is_thinking = model_id.contains("qwen3") || model_id.contains("qwq");
+    let os_hint = if cfg!(windows) { "Windows (используй PowerShell)" } else { "Linux (используй bash)" };
+    let style_hint = if style == "fun" { "Стиль: с характером, шутливый." } else { "Стиль: нейтральный, краткий." };
 
-    let style_hint = if style == "fun" {
-        "Стиль ответа: шутливый, с характером (например «Слушаюсь, шеф!», «Уже бегу!»)"
-    } else {
-        "Стиль ответа: нейтральный, краткий (например «Выполняю», «Готово»)"
-    };
-
-    let prompt = format!(
-        r#"Ты голосовой ассистент {agent_name}. Задача — одновременно:
-1. Определи, какую команду из списка имел в виду пользователь (или null если ни одна).
-2. Сгенерируй короткий ответ на русском (1–5 слов).
-
-Доступные команды (верни точную фразу из кавычек в поле trigger):
-{commands}
-
-Пользователь сказал: "{user_text}"
-
-{style_hint}
-
-Ответь ТОЛЬКО валидным JSON (без текста до и после). Поле trigger — точная фраза триггера из списка выше, или null:
-{{"trigger": "точная фраза или null", "response": "твой ответ или null"}}"#,
-        commands = commands_list.join("\n")
+    let system = format!(
+        "Ты голосовой ассистент {agent_name}. ОС: {os_hint}.\n\
+         Используй доступные инструменты для выполнения запросов. \
+         Ответы короткие — они будут озвучены вслух (максимум 2–3 предложения). \
+         {style_hint} Отвечай на русском."
     );
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
+    let mut req_body = json!({
+        "model": model_id,
+        "stream": false,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_text}
+        ],
+        "tools": tool_definitions(commands),
+        "tool_choice": "auto",
+        "temperature": 0.3,
+        "max_tokens": 512,
+    });
+    if is_thinking { req_body["enable_thinking"] = json!(false); }
 
-    let resp = client
-        .post(&endpoint)
-        .json(&serde_json::json!({
+    let resp = client.post(&endpoint).json(&req_body).send().await?;
+    let chat: ChatResponse = resp.json().await?;
+    let msg = chat.choices.into_iter().next()
+        .map(|c| c.message)
+        .ok_or_else(|| anyhow::anyhow!("Нет ответа от модели"))?;
+
+    // ── Если модель вернула tool_calls ────────────────────────────────────────
+    if let Some(ref tool_calls) = msg.tool_calls {
+        let mut run_trigger: Option<String> = None;
+        let mut tool_messages: Vec<Value> = Vec::new();
+        let mut has_info_tool = false;
+
+        for tc in tool_calls {
+            let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or_default();
+
+            if tc.function.name == "run_command" {
+                let trig = args["trigger"].as_str().unwrap_or("").to_string();
+                run_trigger = Some(trig);
+                tool_messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": "Команда выполнена"
+                }));
+            } else {
+                has_info_tool = true;
+                let result = exec_tool(&tc.function.name, &args);
+                tool_messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result
+                }));
+            }
+        }
+
+        // Если только run_command — быстрый путь, второй запрос не нужен
+        if !has_info_tool {
+            return Ok(NluResult { trigger: run_trigger, response_text: None, must_speak: false });
+        }
+
+        // Второй запрос: LLM интерпретирует вывод инструментов → голосовой ответ
+        let mut messages = vec![
+            json!({"role": "system", "content": system}),
+            json!({"role": "user", "content": user_text}),
+            json!({
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": msg.tool_calls
+            }),
+        ];
+        messages.extend(tool_messages);
+
+        let mut req2 = json!({
             "model": model_id,
             "stream": false,
-            "messages": [{ "role": "user", "content": prompt }],
-            "temperature": 0.1,
-            "max_tokens": 128,
-            // отключаем reasoning для qwen3 и аналогичных thinking-моделей
-            "enable_thinking": false,
-        }))
-        .send()
-        .await?;
+            "messages": messages,
+            "temperature": 0.5,
+            "max_tokens": 256,
+        });
+        if is_thinking { req2["enable_thinking"] = json!(false); }
 
-    let json = resp.json::<serde_json::Value>().await?;
-    let content = json["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or("{}");
+        let resp2 = client.post(&endpoint).json(&req2).send().await?;
+        let chat2: ChatResponse = resp2.json().await?;
+        let response_text = chat2.choices.into_iter().next()
+            .and_then(|c| c.message.content)
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Готово".to_string());
 
-    let clean = content
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
+        return Ok(NluResult {
+            trigger: run_trigger,
+            response_text: Some(response_text),
+            must_speak: true,
+        });
+    }
 
-    let parsed: serde_json::Value = serde_json::from_str(clean)
-        .unwrap_or_else(|_| serde_json::json!({ "trigger": null, "response": null }));
+    // ── Текстовый ответ без tool_calls (модель не поддерживает или решила сама) ─
+    // Fallback: парсим как старый JSON-формат на случай если модель не умеет tool calling
+    let text = msg.content.unwrap_or_default();
+    if let Ok(parsed) = serde_json::from_str::<Value>(
+        text.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim()
+    ) {
+        let trigger = parsed["trigger"].as_str()
+            .filter(|&s| s != "null" && !s.is_empty()).map(|s| s.to_string());
+        let response_text = parsed["response"].as_str()
+            .filter(|&s| s != "null" && !s.is_empty()).map(|s| s.to_string());
+        return Ok(NluResult { trigger, response_text, must_speak: false });
+    }
 
-    let trigger = parsed["trigger"]
-        .as_str()
-        .filter(|&s| s != "null" && !s.is_empty())
-        .map(|s| s.to_string());
-
-    let response_text = parsed["response"]
-        .as_str()
-        .filter(|&s| s != "null" && !s.is_empty())
-        .map(|s| s.to_string());
-
-    Ok(NluResult { trigger, response_text })
+    Ok(NluResult { trigger: None, response_text: None, must_speak: false })
 }
