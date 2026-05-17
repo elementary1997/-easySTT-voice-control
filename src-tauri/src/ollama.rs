@@ -44,9 +44,13 @@ struct AssistantMessage {
     tool_calls: Option<Vec<ToolCall>>,
 }
 
+fn default_tool_type() -> String { "function".to_string() }
+
 #[derive(Deserialize, Serialize, Clone)]
 struct ToolCall {
     id: String,
+    #[serde(rename = "type", default = "default_tool_type")]
+    kind: String,
     function: ToolCallFn,
 }
 
