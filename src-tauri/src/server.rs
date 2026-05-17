@@ -339,14 +339,9 @@ async fn plugin_manifest(State(state): State<ServerState>) -> impl IntoResponse 
 }
 
 async fn open_settings(State(state): State<ServerState>) -> impl IntoResponse {
-    if let Some(w) = state.app_handle.get_webview_window("main") {
-        // set_always_on_top(true→false) forces Windows to bring the window to front
-        let _ = w.set_always_on_top(true);
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
-        let _ = w.set_always_on_top(false);
-    }
+    // Emit event to webview — calling w.show() from a tokio thread is unreliable on Windows.
+    // The React app receives this and calls getCurrentWindow().show() from renderer context.
+    let _ = state.app_handle.emit("show-settings-window", ());
     (StatusCode::OK, Json(json!({ "ok": true })))
 }
 
