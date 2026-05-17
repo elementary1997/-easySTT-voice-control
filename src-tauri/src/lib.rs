@@ -139,8 +139,10 @@ fn test_tts(text: String, engine: String, piper_voice: String, edge_voice: Strin
 // ─── Edge TTS Commands ────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn get_edge_tts_status() -> bool {
-    tts::edge_tts_installed()
+async fn get_edge_tts_status() -> bool {
+    tokio::task::spawn_blocking(tts::edge_tts_installed)
+        .await
+        .unwrap_or(false)
 }
 
 #[tauri::command]

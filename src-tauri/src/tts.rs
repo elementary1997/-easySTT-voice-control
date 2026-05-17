@@ -1,13 +1,20 @@
 // ─── Edge TTS management ──────────────────────────────────────────────────────
 
 pub fn edge_tts_installed() -> bool {
-    std::process::Command::new("edge-tts")
-        .arg("--version")
+    // Используем where/which — мгновенно, не запускает Python
+    #[cfg(windows)]
+    let result = std::process::Command::new("where")
+        .arg("edge-tts")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .status();
+    #[cfg(not(windows))]
+    let result = std::process::Command::new("which")
+        .arg("edge-tts")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    result.map(|s| s.success()).unwrap_or(false)
 }
 
 pub fn install_edge_tts_sync() -> Result<(), String> {
@@ -148,8 +155,25 @@ fn speak_edge(text: &str, voice: &str) {
     let voice = if voice.is_empty() { "ru-RU-SvetlanaNeural".to_string() } else { voice.to_string() };
     std::thread::spawn(move || {
         let temp = std::env::temp_dir().join("easystt_edge_tts.mp3");
+        #[cfg(windows)]
+        let ok = {
+            use std::os::windows::process::CommandExt;
+            std::process::Command::new("edge-tts")
+                .args(["--voice", &voice, "--text", &text, "--write-media", &temp.to_string_lossy()])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(0x08000000)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        };
+        #[cfg(not(windows))]
         let ok = std::process::Command::new("edge-tts")
             .args(["--voice", &voice, "--text", &text, "--write-media", &temp.to_string_lossy()])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
