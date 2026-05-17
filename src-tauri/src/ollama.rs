@@ -241,9 +241,13 @@ fn show_in_terminal(cmd: &str, title: &str) {
 
 fn shell_capture(cmd: &str) -> String {
     #[cfg(windows)]
-    let result = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", cmd])
-        .output();
+    let result = {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", cmd])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .output()
+    };
     #[cfg(not(windows))]
     let result = std::process::Command::new("sh").args(["-c", cmd]).output();
 

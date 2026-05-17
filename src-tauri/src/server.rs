@@ -62,9 +62,14 @@ async fn intercept(
     let text = normalize(&body.text);
     let agent = normalize(&cfg.agent_name);
 
+    state.emit_log("debug", format!("📥 «{}»", body.text));
+
     let command_text = match strip_agent_prefix(&text, &agent) {
         Some(rest) => rest,
         None => {
+            if !text.is_empty() {
+                state.emit_log("debug", format!("∅ имя агента «{agent}» не найдено"));
+            }
             return (
                 StatusCode::OK,
                 Json(InterceptResponse { intercept: false, agent_detected: false, matched_trigger: None, feedback: None }),
