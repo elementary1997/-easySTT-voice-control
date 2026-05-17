@@ -53,11 +53,11 @@ pub fn install_edge_tts_sync() -> Result<(), String> {
 
 /// Произносит текст через системный TTS (неблокирующий — запускает поток).
 pub fn speak(text: &str) {
-    speak_with_engine(text, "system", "", "", "");
+    speak_with_engine(text, "system", "", "", 0, "");
 }
 
 /// Произносит текст с учётом выбранного движка (полная сигнатура).
-pub fn speak_with_engine(text: &str, engine: &str, piper_voice: &str, edge_voice: &str, custom_cmd: &str) {
+pub fn speak_with_engine(text: &str, engine: &str, piper_voice: &str, edge_voice: &str, edge_rate: i32, custom_cmd: &str) {
     match engine {
         "piper" => {
             if crate::piper::is_binary_installed() && crate::piper::is_voice_installed(piper_voice) {
@@ -70,7 +70,7 @@ pub fn speak_with_engine(text: &str, engine: &str, piper_voice: &str, edge_voice
                 });
             }
         }
-        "edge" => speak_edge(text, edge_voice),
+        "edge" => speak_edge(text, edge_voice, edge_rate),
         "custom" if !custom_cmd.is_empty() => {
             let text = text.to_string();
             let custom_cmd = custom_cmd.to_string();
@@ -150,14 +150,15 @@ fn speak_linux(text: &str) {
     }
 }
 
-fn speak_edge(text: &str, voice: &str) {
+fn speak_edge(text: &str, voice: &str, rate: i32) {
     let text = text.to_string();
     let voice = if voice.is_empty() { "ru-RU-SvetlanaNeural".to_string() } else { voice.to_string() };
+    let rate_str = if rate >= 0 { format!("+{}%", rate) } else { format!("{}%", rate) };
     std::thread::spawn(move || {
         let temp = std::env::temp_dir().join("easystt_edge_tts.mp3");
         let temp_str = temp.to_string_lossy().to_string();
         let args = ["--voice", voice.as_str(), "--text", text.as_str(),
-                    "--write-media", temp_str.as_str()];
+                    "--rate", rate_str.as_str(), "--write-media", temp_str.as_str()];
         #[cfg(windows)]
         let ok = {
             use std::os::windows::process::CommandExt;

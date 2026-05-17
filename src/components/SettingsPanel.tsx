@@ -34,6 +34,7 @@ interface PluginConfig {
   voiceEngine: string;
   piperVoice: string;
   edgeTtsVoice: string;
+  edgeTtsRate: number;
   voiceCustomCmd: string;
 }
 
@@ -63,6 +64,7 @@ const DEFAULT_CONFIG: PluginConfig = {
   voiceEngine: "system",
   piperVoice: "ru_RU-denis-medium",
   edgeTtsVoice: "ru-RU-SvetlanaNeural",
+  edgeTtsRate: 0,
   voiceCustomCmd: "",
 };
 
@@ -403,15 +405,15 @@ export default function SettingsPanel() {
   }, [config.commands]);
 
   const handleTestTts = useCallback(() => {
-    // Передаём текущие настройки UI, не ждём сохранения
     invoke("test_tts", {
       text: ttsTestText,
       engine: config.voiceEngine,
       piperVoice: config.piperVoice,
       edgeVoice: config.edgeTtsVoice,
+      edgeRate: config.edgeTtsRate,
       customCmd: config.voiceCustomCmd,
     }).catch(e => showFeedback(`TTS ошибка: ${e}`));
-  }, [ttsTestText, config.voiceEngine, config.piperVoice, config.edgeTtsVoice, config.voiceCustomCmd]);
+  }, [ttsTestText, config.voiceEngine, config.piperVoice, config.edgeTtsVoice, config.edgeTtsRate, config.voiceCustomCmd]);
 
   const handleInstallEdgeTts = useCallback(() => {
     setEdgeTtsInstalling(true);
@@ -768,12 +770,23 @@ export default function SettingsPanel() {
                         <label className="field-label" style={{ marginTop: 10 }}>Голос</label>
                         <select className="field-input" value={config.edgeTtsVoice}
                           onChange={e => setConfig(c => ({ ...c, edgeTtsVoice: e.target.value }))}>
-                          <optgroup label="Русский">
-                            <option value="ru-RU-SvetlanaNeural">Светлана ♀ (Neural)</option>
-                            <option value="ru-RU-DmitryNeural">Дмитрий ♂ (Neural)</option>
-                            <option value="ru-RU-DaryaNeural">Дарья ♀ (Expressive)</option>
-                          </optgroup>
+                          <option value="ru-RU-SvetlanaNeural">Светлана ♀</option>
+                          <option value="ru-RU-DmitryNeural">Дмитрий ♂</option>
                         </select>
+
+                        <label className="field-label" style={{ marginTop: 10 }}>
+                          Скорость речи&nbsp;
+                          <span className="field-hint" style={{ fontWeight: 500 }}>
+                            {config.edgeTtsRate >= 0 ? `+${config.edgeTtsRate}%` : `${config.edgeTtsRate}%`}
+                          </span>
+                        </label>
+                        <input type="range" min={-50} max={100} step={10}
+                          value={config.edgeTtsRate}
+                          onChange={e => setConfig(c => ({ ...c, edgeTtsRate: Number(e.target.value) }))}
+                          style={{ width: "100%", accentColor: "var(--accent)" }} />
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                          <span>-50% (медленно)</span><span>0</span><span>+100% (быстро)</span>
+                        </div>
                       </>
                     )}
                   </div>

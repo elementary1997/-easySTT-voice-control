@@ -31,6 +31,7 @@ fn default_voice_style() -> String { "neutral".to_string() }
 fn default_voice_engine() -> String { "system".to_string() }
 fn default_piper_voice() -> String { "ru_RU-denis-medium".to_string() }
 fn default_edge_voice() -> String { "ru-RU-SvetlanaNeural".to_string() }
+fn default_edge_rate() -> i32 { 0 }
 
 fn default_categories() -> Vec<String> {
     vec![
@@ -79,6 +80,9 @@ pub struct PluginConfig {
     /// Голос Edge TTS (напр. "ru-RU-SvetlanaNeural").
     #[serde(default = "default_edge_voice")]
     pub edge_tts_voice: String,
+    /// Скорость Edge TTS: -50..+100, 0 = норма.
+    #[serde(default = "default_edge_rate")]
+    pub edge_tts_rate: i32,
     /// Шаблон команды для кастомного движка. {text} заменяется на текст.
     #[serde(default)]
     pub voice_custom_cmd: String,
@@ -100,6 +104,7 @@ impl Default for PluginConfig {
             voice_engine: default_voice_engine(),
             piper_voice: default_piper_voice(),
             edge_tts_voice: default_edge_voice(),
+            edge_tts_rate: 0,
             voice_custom_cmd: String::new(),
             commands: vec![
                 VoiceCommand {
