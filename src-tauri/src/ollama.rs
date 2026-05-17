@@ -235,17 +235,22 @@ fn open_url(url: &str) {
 
 // ─── Main NLU entry point ─────────────────────────────────────────────────────
 
-pub async fn nlu_and_respond(
+pub async fn nlu_and_respond<F>(
     url: &str,
     model_id: &str,
     agent_name: &str,
     commands: &[crate::config::VoiceCommand],
     user_text: &str,
     style: &str,
-) -> anyhow::Result<NluResult> {
+    log: &F,
+) -> anyhow::Result<NluResult>
+where
+    F: Fn(&str, &str) + Send,
+{
     if model_id.is_empty() {
         return Ok(NluResult { trigger: None, response_text: None, must_speak: false });
     }
+    log("debug", &format!("→ tools: {n} команд", n = commands.len()));
 
     let endpoint = format!("{}/v1/chat/completions", url.trim_end_matches('/'));
     let client = reqwest::Client::builder().timeout(Duration::from_secs(90)).build()?;
@@ -292,6 +297,7 @@ pub async fn nlu_and_respond(
 
             if tc.function.name == "run_command" {
                 let trig = args["trigger"].as_str().unwrap_or("").to_string();
+                log("info", &format!("🔧 run_command(«{trig}»)"));
                 run_trigger = Some(trig);
                 tool_messages.push(json!({
                     "role": "tool",
@@ -300,7 +306,10 @@ pub async fn nlu_and_respond(
                 }));
             } else {
                 has_info_tool = true;
+                log("info", &format!("🔧 {}({})", tc.function.name, tc.function.arguments));
                 let result = exec_tool(&tc.function.name, &args);
+                let preview = if result.len() > 120 { format!("{}…", &result[..120]) } else { result.clone() };
+                log("debug", &format!("📤 {preview}"));
                 tool_messages.push(json!({
                     "role": "tool",
                     "tool_call_id": tc.id,
@@ -349,7 +358,7 @@ pub async fn nlu_and_respond(
         });
     }
 
-    // ── Текстовый ответ без tool_calls (модель не поддерживает или решила сама) ─
+    log("warn", "⚠ Модель не вернула tool_calls — fallback к JSON-парсингу");
     // Fallback: парсим как старый JSON-формат на случай если модель не умеет tool calling
     let text = msg.content.unwrap_or_default();
     if let Ok(parsed) = serde_json::from_str::<Value>(

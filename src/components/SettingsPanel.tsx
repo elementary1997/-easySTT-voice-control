@@ -38,6 +38,12 @@ interface PluginConfig {
   voiceCustomCmd: string;
 }
 
+interface LogEntry {
+  ts: string;
+  level: "info" | "warn" | "error" | "debug";
+  msg: string;
+}
+
 interface PiperVoice {
   id: string;
   displayName: string;
@@ -78,6 +84,67 @@ const EMPTY_COMMAND: Omit<VoiceCommand, "id"> = {
 
 function newId() { return crypto.randomUUID(); }
 function normalizeTrigger(t: string) { return t.toLowerCase().trim().replace(/\s+/g, " "); }
+
+// ─── LogModal ─────────────────────────────────────────────────────────────────
+
+function LogModal({ entries, onClear, onClose }: {
+  entries: LogEntry[];
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+
+  useEffect(() => {
+    if (autoScroll && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [entries, autoScroll]);
+
+  const handleScroll = () => {
+    if (!bodyRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = bodyRef.current;
+    setAutoScroll(scrollHeight - scrollTop - clientHeight < 40);
+  };
+
+  return (
+    <div className="log-backdrop" onClick={onClose}>
+      <div className="log-window" onClick={e => e.stopPropagation()}>
+        <div className="log-header">
+          <div className="log-header-left">
+            <span className="log-title">Логи агента</span>
+            <span className="log-count">{entries.length} записей</span>
+          </div>
+          <div className="log-header-actions">
+            <button className="log-clear-btn" onClick={onClear}>Очистить</button>
+            <button className="log-close-btn" onClick={onClose}>×</button>
+          </div>
+        </div>
+
+        <div className="log-body" ref={bodyRef} onScroll={handleScroll}>
+          {entries.length === 0
+            ? <div className="log-empty">Логов нет. Попробуй что-нибудь сказать агенту.</div>
+            : entries.map((e, i) => (
+              <div key={i} className="log-entry">
+                <span className="log-ts">{e.ts}</span>
+                <span className={`log-badge log-badge--${e.level}`}>{e.level}</span>
+                <span className={`log-msg log-msg--${e.level}`}>{e.msg}</span>
+              </div>
+            ))
+          }
+        </div>
+
+        <div className="log-footer">
+          <label className="log-autoscroll">
+            <input type="checkbox" checked={autoScroll} onChange={e => setAutoScroll(e.target.checked)} />
+            Автопрокрутка
+          </label>
+          <span>UTC время</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── AliasInput ───────────────────────────────────────────────────────────────
 
@@ -232,6 +299,10 @@ export default function SettingsPanel() {
   const [edgeTtsInstalled, setEdgeTtsInstalled] = useState(false);
   const [edgeTtsInstalling, setEdgeTtsInstalling] = useState(false);
 
+  // Log state
+  const [showLogs, setShowLogs] = useState(false);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+
   // ── Init ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -277,6 +348,18 @@ export default function SettingsPanel() {
       invoke<boolean>("get_edge_tts_status").then(setEdgeTtsInstalled);
     }
   }, [config.voiceEngine]);
+
+  // Logs: load existing + listen for new
+  useEffect(() => {
+    invoke<LogEntry[]>("get_logs").then(setLogEntries);
+    const unsub = listen<LogEntry>("vc-log", ({ payload }) => {
+      setLogEntries(prev => {
+        const next = [...prev, payload];
+        return next.length > 500 ? next.slice(-500) : next;
+      });
+    });
+    return () => { unsub.then(f => f()); };
+  }, []);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -441,6 +524,11 @@ export default function SettingsPanel() {
     invoke("download_piper_voice", { voiceId });
   }, []);
 
+  const handleClearLogs = useCallback(() => {
+    invoke("clear_logs");
+    setLogEntries([]);
+  }, []);
+
   const handleCancelPiper = useCallback(() => {
     invoke("cancel_piper_download");
     setPiperDownloading(null);
@@ -458,6 +546,10 @@ export default function SettingsPanel() {
           <span>easySTT Voice Control</span>
         </div>
         <div className="header-toggles">
+          <button className="log-btn" onClick={() => setShowLogs(true)}>
+            {logEntries.length > 0 && <span className="log-btn-dot" />}
+            Логи
+          </button>
           <label className="toggle-row">
             <input type="checkbox" checked={config.autostart}
               onChange={e => setConfig(c => ({ ...c, autostart: e.target.checked }))} />
@@ -831,6 +923,10 @@ export default function SettingsPanel() {
       {editTarget !== null && (
         <EditModal cmd={editTarget === "new" ? null : editTarget} categories={config.categories}
           onSave={handleEditSave} onClose={() => setEditTarget(null)} />
+      )}
+
+      {showLogs && (
+        <LogModal entries={logEntries} onClear={handleClearLogs} onClose={() => setShowLogs(false)} />
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 mod config;
+mod logger;
 mod ollama;
 mod piper;
 mod server;
@@ -21,6 +22,7 @@ const STORE_KEY: &str = "config";
 pub struct AppState {
     pub config: SharedConfig,
     pub dl_cancel: Arc<AtomicBool>,
+    pub log: logger::SharedLog,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -232,6 +234,18 @@ fn cancel_piper_download(state: State<'_, AppState>) {
     state.dl_cancel.store(true, Ordering::SeqCst);
 }
 
+// ─── Logs ─────────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_logs(state: State<'_, AppState>) -> Vec<logger::LogEntry> {
+    state.log.lock().unwrap().iter().cloned().collect()
+}
+
+#[tauri::command]
+fn clear_logs(state: State<'_, AppState>) {
+    state.log.lock().unwrap().clear();
+}
+
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -251,6 +265,7 @@ fn export_commands(state: State<'_, AppState>) -> Result<String, String> {
 pub fn run() {
     let shared_config: SharedConfig = Arc::new(Mutex::new(PluginConfig::default()));
     let dl_cancel = Arc::new(AtomicBool::new(false));
+    let shared_log = logger::new_log();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -258,7 +273,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--background"]),
         ))
-        .manage(AppState { config: shared_config.clone(), dl_cancel: dl_cancel.clone() })
+        .manage(AppState { config: shared_config.clone(), dl_cancel: dl_cancel.clone(), log: shared_log.clone() })
         .setup(move |app| {
             let saved = load_from_store(app);
             let args: Vec<String> = std::env::args().collect();
@@ -270,9 +285,10 @@ pub fn run() {
             *shared_config.lock().unwrap() = saved;
 
             let cfg_for_server = shared_config.clone();
+            let log_for_server = shared_log.clone();
             let handle_for_server = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = server::serve(cfg_for_server, port, handle_for_server).await {
+                if let Err(e) = server::serve(cfg_for_server, log_for_server, port, handle_for_server).await {
                     eprintln!("[voice-control] Ошибка сервера: {e}");
                 }
             });
@@ -308,6 +324,8 @@ pub fn run() {
             download_piper_binary,
             download_piper_voice,
             cancel_piper_download,
+            get_logs,
+            clear_logs,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска easySTT Voice Control");
