@@ -1,20 +1,28 @@
 // ─── Edge TTS management ──────────────────────────────────────────────────────
 
 pub fn edge_tts_installed() -> bool {
-    // Используем where/which — мгновенно, не запускает Python
     #[cfg(windows)]
-    let result = std::process::Command::new("where")
-        .arg("edge-tts")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("where")
+            .arg("edge-tts")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(0x08000000)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
     #[cfg(not(windows))]
-    let result = std::process::Command::new("which")
-        .arg("edge-tts")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    result.map(|s| s.success()).unwrap_or(false)
+    {
+        std::process::Command::new("which")
+            .arg("edge-tts")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
 }
 
 pub fn install_edge_tts_sync() -> Result<(), String> {
