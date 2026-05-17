@@ -399,14 +399,18 @@ where
         }
 
         // Второй запрос: LLM суммирует вывод shell_query в голосовой ответ
+        let mut assistant_msg = json!({
+            "role": "assistant",
+            "tool_calls": msg.tool_calls
+        });
+        if let Some(ref c) = msg.content {
+            assistant_msg["content"] = json!(c);
+        }
+
         let mut messages = vec![
             json!({"role": "system", "content": system}),
             json!({"role": "user", "content": user_text}),
-            json!({
-                "role": "assistant",
-                "content": null,
-                "tool_calls": msg.tool_calls
-            }),
+            assistant_msg,
         ];
         messages.extend(shell_query_results);
 
