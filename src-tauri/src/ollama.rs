@@ -314,6 +314,7 @@ pub async fn nlu_and_respond<F>(
     commands: &[crate::config::VoiceCommand],
     user_text: &str,
     style: &str,
+    extra_system: &str,
     log: &F,
 ) -> anyhow::Result<NluResult>
 where
@@ -331,12 +332,17 @@ where
     let os_hint = if cfg!(windows) { "Windows (используй PowerShell)" } else { "Linux (используй bash)" };
     let style_hint = if style == "fun" { "Стиль: с характером, шутливый." } else { "Стиль: нейтральный, краткий." };
 
-    let system = format!(
+    let base = format!(
         "Ты голосовой ассистент {agent_name}. ОС: {os_hint}.\n\
          Используй доступные инструменты для выполнения запросов. \
          Ответы короткие — они будут озвучены вслух (максимум 2–3 предложения). \
          {style_hint} Отвечай на русском."
     );
+    let system = if extra_system.is_empty() {
+        base
+    } else {
+        format!("{base}\n\n{extra_system}")
+    };
 
     let mut req_body = json!({
         "model": model_id,

@@ -64,6 +64,9 @@ pub struct PluginConfig {
     /// ID модели Ollama (напр. "llama3.2:1b").
     #[serde(default = "default_ollama_model")]
     pub ollama_model: String,
+    /// Дополнительные инструкции к системному промпту (добавляются после базового промпта).
+    #[serde(default)]
+    pub ollama_system_prompt: String,
 
     // ── TTS / Голосовой ответ ─────────────────────────────────────────────────
     #[serde(default)]
@@ -99,6 +102,7 @@ impl Default for PluginConfig {
             ollama_enabled: false,
             ollama_url: default_ollama_url(),
             ollama_model: default_ollama_model(),
+            ollama_system_prompt: String::new(),
             voice_feedback_enabled: false,
             voice_feedback_style: default_voice_style(),
             voice_engine: default_voice_engine(),

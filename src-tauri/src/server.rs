@@ -164,6 +164,7 @@ async fn intercept(
                 &cfg2.commands,
                 &text2,
                 &cfg2.voice_feedback_style,
+                &cfg2.ollama_system_prompt,
                 &emit,
             )
             .await

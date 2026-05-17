@@ -29,6 +29,7 @@ interface PluginConfig {
   ollamaEnabled: boolean;
   ollamaUrl: string;
   ollamaModel: string;
+  ollamaSystemPrompt: string;
   voiceFeedbackEnabled: boolean;
   voiceFeedbackStyle: string;
   voiceEngine: string;
@@ -65,6 +66,7 @@ const DEFAULT_CONFIG: PluginConfig = {
   ollamaEnabled: false,
   ollamaUrl: "http://localhost:1234",
   ollamaModel: "",
+  ollamaSystemPrompt: "",
   voiceFeedbackEnabled: false,
   voiceFeedbackStyle: "neutral",
   voiceEngine: "system",
@@ -716,6 +718,16 @@ export default function SettingsPanel() {
                   )}
                 </>
               )}
+              <label className="field-label" style={{ marginTop: 12 }}>Системный промпт (дополнение)</label>
+              <textarea
+                className="field-input"
+                rows={4}
+                style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }}
+                placeholder="Дополнительные инструкции к базовому промпту…"
+                value={config.ollamaSystemPrompt}
+                onChange={e => setConfig(c => ({ ...c, ollamaSystemPrompt: e.target.value }))}
+              />
+              <span className="field-hint">Добавляется после базового промпта ассистента</span>
             </>}
           </div>
 
