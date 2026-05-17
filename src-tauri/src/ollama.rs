@@ -99,7 +99,7 @@ fn tool_definitions(commands: &[crate::config::VoiceCommand]) -> Value {
             "type": "function",
             "function": {
                 "name": "shell_query",
-                "description": "Выполнить команду в терминале и вернуть вывод. Используй для информационных запросов: что жрёт память/CPU, состояние диска, запущенные процессы, Docker контейнеры, сетевые соединения, логи и т.д.",
+                "description": "Выполнить команду и получить вывод для голосового ответа. Используй ТОЛЬКО когда результат можно кратко пересказать вслух (1–2 предложения): сколько RAM занято, статус одного процесса, текущий IP, размер одной папки. Для таблиц, списков и длинного вывода используй show_terminal.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -136,6 +136,27 @@ fn tool_definitions(commands: &[crate::config::VoiceCommand]) -> Value {
         {
             "type": "function",
             "function": {
+                "name": "show_terminal",
+                "description": "Открыть видимый терминал и выполнить команду — пользователь сам читает вывод. Используй когда результат лучше ПОКАЗАТЬ, а не зачитывать вслух: таблицы процессов, списки файлов, логи, docker ps, netstat, дерево директорий и т.п. В отличие от shell_query, вывод НЕ передаётся тебе — ты просто подтверждаешь что открыл окно.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "Команда для выполнения в видимом терминале"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Короткий заголовок окна (например: «Процессы», «Docker», «Диск»)"
+                        }
+                    },
+                    "required": ["command"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "open_url",
                 "description": "Открыть URL в браузере по умолчанию.",
                 "parameters": {
@@ -158,6 +179,12 @@ fn exec_tool(name: &str, args: &Value) -> String {
             let cmd = args["command"].as_str().unwrap_or("echo пусто");
             shell_capture(cmd)
         }
+        "show_terminal" => {
+            let cmd = args["command"].as_str().unwrap_or("echo пусто");
+            let title = args["title"].as_str().unwrap_or("Агент");
+            show_in_terminal(cmd, title);
+            "Терминал открыт, пользователь видит вывод".to_string()
+        }
         "kill_process" => {
             let pname = args["name"].as_str().unwrap_or("");
             kill_proc(pname)
@@ -169,6 +196,43 @@ fn exec_tool(name: &str, args: &Value) -> String {
         }
         _ => "Неизвестный инструмент".to_string(),
     }
+}
+
+fn show_in_terminal(cmd: &str, title: &str) {
+    let cmd = cmd.to_string();
+    let title = title.to_string();
+    std::thread::spawn(move || {
+        #[cfg(windows)]
+        {
+            // PowerShell с -NoExit чтобы окно не закрылось сразу
+            let script = format!(
+                "$host.UI.RawUI.WindowTitle = '{title}'; {cmd}; Write-Host ''; Write-Host 'Нажмите Enter для закрытия...' -ForegroundColor DarkGray; Read-Host",
+            );
+            let _ = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", &script])
+                .spawn();
+        }
+        #[cfg(not(windows))]
+        {
+            // Пробуем разные терминальные эмуляторы
+            let bash_cmd = format!("{cmd}; echo; read -p 'Нажмите Enter для закрытия...'");
+            let launched =
+                std::process::Command::new("gnome-terminal")
+                    .args(["--title", &title, "--", "bash", "-c", &bash_cmd])
+                    .spawn().is_ok()
+                || std::process::Command::new("konsole")
+                    .args(["--title", &title, "-e", "bash", "-c", &bash_cmd])
+                    .spawn().is_ok()
+                || std::process::Command::new("xfce4-terminal")
+                    .args(["--title", &title, "-e", &format!("bash -c '{bash_cmd}'")])
+                    .spawn().is_ok();
+            if !launched {
+                let _ = std::process::Command::new("xterm")
+                    .args(["-title", &title, "-e", "bash", "-c", &bash_cmd])
+                    .spawn();
+            }
+        }
+    });
 }
 
 fn shell_capture(cmd: &str) -> String {
