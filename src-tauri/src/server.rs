@@ -340,7 +340,12 @@ async fn plugin_manifest(State(state): State<ServerState>) -> impl IntoResponse 
 
 async fn open_settings(State(state): State<ServerState>) -> impl IntoResponse {
     if let Some(w) = state.app_handle.get_webview_window("main") {
-        let _ = w.unminimize(); let _ = w.show(); let _ = w.set_focus();
+        // set_always_on_top(true→false) forces Windows to bring the window to front
+        let _ = w.set_always_on_top(true);
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+        let _ = w.set_always_on_top(false);
     }
     (StatusCode::OK, Json(json!({ "ok": true })))
 }
