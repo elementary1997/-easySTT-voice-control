@@ -353,51 +353,62 @@ where
     // ── Если модель вернула tool_calls ────────────────────────────────────────
     if let Some(ref tool_calls) = msg.tool_calls {
         let mut run_trigger: Option<String> = None;
-        let mut tool_messages: Vec<Value> = Vec::new();
-        let mut has_info_tool = false;
+        let mut shell_query_results: Vec<Value> = Vec::new(); // требуют второго запроса
+        let mut action_responses: Vec<String> = Vec::new();  // уже готовый текст для TTS
 
         for tc in tool_calls {
             let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or_default();
 
-            if tc.function.name == "run_command" {
-                let trig = args["trigger"].as_str().unwrap_or("").to_string();
-                log("info", &format!("🔧 run_command(«{trig}»)"));
-                run_trigger = Some(trig);
-                tool_messages.push(json!({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": "Команда выполнена"
-                }));
-            } else {
-                has_info_tool = true;
-                log("info", &format!("🔧 {}({})", tc.function.name, tc.function.arguments));
-                let result = exec_tool(&tc.function.name, &args);
-                let preview = if result.len() > 120 { format!("{}…", &result[..120]) } else { result.clone() };
-                log("debug", &format!("📤 {preview}"));
-                tool_messages.push(json!({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result
-                }));
+            match tc.function.name.as_str() {
+                "run_command" => {
+                    let trig = args["trigger"].as_str().unwrap_or("").to_string();
+                    log("info", &format!("🔧 run_command(«{trig}»)"));
+                    run_trigger = Some(trig);
+                }
+                "shell_query" => {
+                    // Вывод нужно интерпретировать через LLM → второй запрос
+                    log("info", &format!("🔧 shell_query({})", tc.function.arguments));
+                    let result = exec_tool("shell_query", &args);
+                    let preview = if result.len() > 120 { format!("{}…", &result[..120]) } else { result.clone() };
+                    log("debug", &format!("📤 {preview}"));
+                    shell_query_results.push(json!({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result
+                    }));
+                }
+                tool_name => {
+                    // show_terminal / kill_process / open_url — выполняем и берём их строку ответа
+                    log("info", &format!("🔧 {tool_name}({})", tc.function.arguments));
+                    let result = exec_tool(tool_name, &args);
+                    let preview = if result.len() > 120 { format!("{}…", &result[..120]) } else { result.clone() };
+                    log("debug", &format!("📤 {preview}"));
+                    action_responses.push(result);
+                }
             }
         }
 
-        // Если только run_command — быстрый путь, второй запрос не нужен
-        if !has_info_tool {
-            return Ok(NluResult { trigger: run_trigger, response_text: None, must_speak: false });
+        // Быстрый путь: только run_command и/или action tools — второй запрос не нужен
+        if shell_query_results.is_empty() {
+            let response_text = if action_responses.is_empty() {
+                None
+            } else {
+                Some(action_responses.join("; "))
+            };
+            return Ok(NluResult { trigger: run_trigger, response_text, must_speak: !action_responses.is_empty() });
         }
 
-        // Второй запрос: LLM интерпретирует вывод инструментов → голосовой ответ
+        // Второй запрос: LLM суммирует вывод shell_query в голосовой ответ
         let mut messages = vec![
             json!({"role": "system", "content": system}),
             json!({"role": "user", "content": user_text}),
             json!({
                 "role": "assistant",
-                "content": msg.content,
+                "content": null,
                 "tool_calls": msg.tool_calls
             }),
         ];
-        messages.extend(tool_messages);
+        messages.extend(shell_query_results);
 
         let mut req2 = json!({
             "model": model_id,
@@ -409,7 +420,14 @@ where
         if is_thinking { req2["enable_thinking"] = json!(false); }
 
         let resp2 = client.post(&endpoint).json(&req2).send().await?;
-        let chat2: ChatResponse = resp2.json().await?;
+        // Читаем тело как текст чтобы видеть ошибку в логах если что-то пошло не так
+        let body2 = resp2.text().await?;
+        let chat2 = serde_json::from_str::<ChatResponse>(&body2).map_err(|e| {
+            let snippet = if body2.len() > 300 { &body2[..300] } else { &body2 };
+            log("error", &format!("Ответ модели (2й запрос): {snippet}"));
+            anyhow::anyhow!("Ошибка парсинга ответа: {e}")
+        })?;
+
         let response_text = chat2.choices.into_iter().next()
             .and_then(|c| c.message.content)
             .filter(|s| !s.is_empty())
