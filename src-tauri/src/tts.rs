@@ -155,12 +155,14 @@ fn speak_edge(text: &str, voice: &str) {
     let voice = if voice.is_empty() { "ru-RU-SvetlanaNeural".to_string() } else { voice.to_string() };
     std::thread::spawn(move || {
         let temp = std::env::temp_dir().join("easystt_edge_tts.mp3");
+        let temp_str = temp.to_string_lossy().to_string();
+        let args = ["--voice", voice.as_str(), "--text", text.as_str(),
+                    "--write-media", temp_str.as_str()];
         #[cfg(windows)]
         let ok = {
             use std::os::windows::process::CommandExt;
             std::process::Command::new("edge-tts")
-                .args(["--voice", &voice, "--text", &text, "--write-media", &temp.to_string_lossy()])
-                .stdin(std::process::Stdio::null())
+                .args(args)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .creation_flags(0x08000000)
@@ -170,14 +172,13 @@ fn speak_edge(text: &str, voice: &str) {
         };
         #[cfg(not(windows))]
         let ok = std::process::Command::new("edge-tts")
-            .args(["--voice", &voice, "--text", &text, "--write-media", &temp.to_string_lossy()])
-            .stdin(std::process::Stdio::null())
+            .args(args)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
-        if ok { play_mp3(&temp); }
+        if ok && temp.exists() { play_mp3(&temp); }
     });
 }
 
@@ -186,15 +187,20 @@ fn play_mp3(path: &std::path::Path) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        // MCI (winmm.dll) — есть в любой Windows, поддерживает MP3, не открывает окно
+        let safe_path = path_str.replace('"', "'");
         let script = format!(
-            r#"$wmp = New-Object -ComObject WMPlayer.OCX;
-$wmp.URL = '{}';
-$wmp.controls.play();
-$dur = 0; $i = 0
-while ($i -lt 50 -and $dur -eq 0) {{ Start-Sleep -Milliseconds 200; $dur = [int]($wmp.currentMedia.duration); $i++ }}
-Start-Sleep -Seconds ([math]::Max($dur, 2) + 1);
-$wmp.close()"#,
-            path_str.replace('\'', "''")
+            r#"Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices; using System.Text;
+public class WinMM {{
+    [DllImport("winmm.dll", CharSet=CharSet.Auto)]
+    public static extern int mciSendString(string cmd, StringBuilder ret, int retLen, IntPtr hwnd);
+}}
+'@
+[WinMM]::mciSendString('open "{p}" type mpegvideo alias m', $null, 0, [IntPtr]::Zero) | Out-Null
+[WinMM]::mciSendString('play m wait', $null, 0, [IntPtr]::Zero) | Out-Null
+[WinMM]::mciSendString('close m', $null, 0, [IntPtr]::Zero) | Out-Null"#,
+            p = safe_path
         );
         let _ = std::process::Command::new("powershell")
             .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
@@ -203,7 +209,7 @@ $wmp.close()"#,
     }
     #[cfg(not(windows))]
     {
-        let ok = std::process::Command::new("mpg123").arg("-q").arg(&path_str).spawn().is_ok();
+        let ok = std::process::Command::new("mpg123").args(["-q", &path_str]).spawn().is_ok();
         if !ok {
             let ok2 = std::process::Command::new("mpv").args(["--no-video", &path_str]).spawn().is_ok();
             if !ok2 {
