@@ -1,3 +1,49 @@
+// ─── Edge TTS management ──────────────────────────────────────────────────────
+
+pub fn edge_tts_installed() -> bool {
+    std::process::Command::new("edge-tts")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+pub fn install_edge_tts_sync() -> Result<(), String> {
+    // Пробуем разные варианты pip в порядке приоритета
+    let mut candidates: Vec<(&str, Vec<&str>)> = vec![
+        ("pip3",    vec!["install", "edge-tts"]),
+        ("pip",     vec!["install", "edge-tts"]),
+        ("python3", vec!["-m", "pip", "install", "edge-tts"]),
+        ("python",  vec!["-m", "pip", "install", "edge-tts"]),
+    ];
+    #[cfg(windows)]
+    candidates.push(("py", vec!["-m", "pip", "install", "edge-tts"]));
+
+    for (cmd, args) in &candidates {
+        #[cfg(windows)]
+        let result = {
+            use std::os::windows::process::CommandExt;
+            std::process::Command::new(cmd)
+                .args(args)
+                .creation_flags(0x08000000)
+                .status()
+        };
+        #[cfg(not(windows))]
+        let result = std::process::Command::new(cmd).args(args).status();
+
+        if let Ok(status) = result {
+            if status.success() {
+                return Ok(());
+            }
+        }
+    }
+    Err("Не удалось установить edge-tts. Убедитесь что Python и pip установлены.".to_string())
+}
+
+// ─── TTS speak ────────────────────────────────────────────────────────────────
+
 /// Произносит текст через системный TTS (неблокирующий — запускает поток).
 pub fn speak(text: &str) {
     speak_with_engine(text, "system", "", "", "");

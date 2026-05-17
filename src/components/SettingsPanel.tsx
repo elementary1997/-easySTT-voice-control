@@ -226,6 +226,10 @@ export default function SettingsPanel() {
   const [piperProgress, setPiperProgress] = useState<Record<string, number>>({});
   const [piperDownloading, setPiperDownloading] = useState<string | null>(null);
 
+  // Edge TTS state
+  const [edgeTtsInstalled, setEdgeTtsInstalled] = useState(false);
+  const [edgeTtsInstalling, setEdgeTtsInstalling] = useState(false);
+
   // ── Init ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -251,6 +255,26 @@ export default function SettingsPanel() {
     });
     return () => { u1.then(f => f()); u2.then(f => f()); u3.then(f => f()); };
   }, []);
+
+  // Edge TTS events + status check
+  useEffect(() => {
+    const u1 = listen("edge-tts-installed", () => {
+      setEdgeTtsInstalled(true);
+      setEdgeTtsInstalling(false);
+      showFeedback("edge-tts установлен!");
+    });
+    const u2 = listen<string>("edge-tts-error", ({ payload }) => {
+      setEdgeTtsInstalling(false);
+      showFeedback(`Ошибка: ${payload}`, 6000);
+    });
+    return () => { u1.then(f => f()); u2.then(f => f()); };
+  }, []);
+
+  useEffect(() => {
+    if (config.voiceEngine === "edge") {
+      invoke<boolean>("get_edge_tts_status").then(setEdgeTtsInstalled);
+    }
+  }, [config.voiceEngine]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -388,6 +412,14 @@ export default function SettingsPanel() {
       customCmd: config.voiceCustomCmd,
     }).catch(e => showFeedback(`TTS ошибка: ${e}`));
   }, [ttsTestText, config.voiceEngine, config.piperVoice, config.edgeTtsVoice, config.voiceCustomCmd]);
+
+  const handleInstallEdgeTts = useCallback(() => {
+    setEdgeTtsInstalling(true);
+    invoke("install_edge_tts").catch(e => {
+      setEdgeTtsInstalling(false);
+      showFeedback(`Ошибка: ${e}`);
+    });
+  }, []);
 
   const loadPiperStatus = useCallback(() => {
     invoke<PiperStatus>("get_piper_status").then(setPiperStatus);
@@ -719,18 +751,31 @@ export default function SettingsPanel() {
 
                 {config.voiceEngine === "edge" && (
                   <div className="piper-section">
-                    <label className="field-label" style={{ marginTop: 4 }}>Голос</label>
-                    <select className="field-input" value={config.edgeTtsVoice}
-                      onChange={e => setConfig(c => ({ ...c, edgeTtsVoice: e.target.value }))}>
-                      <optgroup label="Русский">
-                        <option value="ru-RU-SvetlanaNeural">Светлана ♀ (Neural)</option>
-                        <option value="ru-RU-DmitryNeural">Дмитрий ♂ (Neural)</option>
-                        <option value="ru-RU-DaryaNeural">Дарья ♀ (Expressive)</option>
-                      </optgroup>
-                    </select>
-                    <span className="field-hint" style={{ marginTop: 4 }}>
-                      Требуется: <code>pip install edge-tts</code>
-                    </span>
+                    <div className="piper-binary-row">
+                      <span className={`piper-binary-status ${edgeTtsInstalled ? "piper-binary-status--ok" : ""}`}>
+                        {edgeTtsInstalled ? "● edge-tts установлен" : "● edge-tts не установлен"}
+                      </span>
+                      {!edgeTtsInstalled && (
+                        edgeTtsInstalling
+                          ? <span className="piper-binary-status">Устанавливается...</span>
+                          : <button className="btn-primary btn-small" onClick={handleInstallEdgeTts}>
+                              Установить
+                            </button>
+                      )}
+                    </div>
+                    {edgeTtsInstalled && (
+                      <>
+                        <label className="field-label" style={{ marginTop: 10 }}>Голос</label>
+                        <select className="field-input" value={config.edgeTtsVoice}
+                          onChange={e => setConfig(c => ({ ...c, edgeTtsVoice: e.target.value }))}>
+                          <optgroup label="Русский">
+                            <option value="ru-RU-SvetlanaNeural">Светлана ♀ (Neural)</option>
+                            <option value="ru-RU-DmitryNeural">Дмитрий ♂ (Neural)</option>
+                            <option value="ru-RU-DaryaNeural">Дарья ♀ (Expressive)</option>
+                          </optgroup>
+                        </select>
+                      </>
+                    )}
                   </div>
                 )}
 

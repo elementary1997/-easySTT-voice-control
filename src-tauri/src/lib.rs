@@ -136,6 +136,23 @@ fn test_tts(text: String, engine: String, piper_voice: String, edge_voice: Strin
     tts::speak_with_engine(&text, &engine, &piper_voice, &edge_voice, &custom_cmd);
 }
 
+// ─── Edge TTS Commands ────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_edge_tts_status() -> bool {
+    tts::edge_tts_installed()
+}
+
+#[tauri::command]
+fn install_edge_tts(app: AppHandle) {
+    std::thread::spawn(move || {
+        match tts::install_edge_tts_sync() {
+            Ok(()) => { let _ = app.emit("edge-tts-installed", true); }
+            Err(e) => { let _ = app.emit("edge-tts-error", e); }
+        }
+    });
+}
+
 // ─── Piper Commands ───────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
@@ -283,6 +300,8 @@ pub fn run() {
             get_ai_models,
             check_ollama,
             test_tts,
+            get_edge_tts_status,
+            install_edge_tts,
             get_piper_status,
             download_piper_binary,
             download_piper_voice,
