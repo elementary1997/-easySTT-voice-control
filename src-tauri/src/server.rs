@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_store::StoreExt;
 
 use crate::config::PluginConfig;
 
@@ -346,9 +347,16 @@ async fn open_settings(State(state): State<ServerState>) -> impl IntoResponse {
 }
 
 async fn reset_config(State(state): State<ServerState>) -> impl IntoResponse {
-    use tauri::Manager;
-    if let Ok(config_dir) = state.app_handle.path().app_config_dir() {
-        let _ = std::fs::remove_file(config_dir.join("voice_control.json"));
+    // Keep user commands — they are personal data unrelated to plugin connection.
+    // Only reset connection/settings fields back to defaults.
+    let commands = state.config.lock().unwrap().commands.clone();
+    let mut fresh = crate::config::PluginConfig::default();
+    fresh.commands = commands;
+    if let Ok(store) = state.app_handle.store(crate::STORE_FILE) {
+        if let Ok(val) = serde_json::to_value(&fresh) {
+            let _ = store.set(crate::STORE_KEY, val);
+            let _ = store.save();
+        }
     }
     std::thread::spawn(|| {
         std::thread::sleep(std::time::Duration::from_millis(200));
